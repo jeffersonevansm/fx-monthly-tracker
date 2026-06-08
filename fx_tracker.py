@@ -1,9 +1,9 @@
 """
 FX Monthly Tracker -- a personal dashboard for major USD pairs.
 
-AI analysis is now month-by-month (most recent first). Web search is OFF
-by default to keep it cheap (~1 cent); tick the box to add cited sources
-(~10-15 cents). Uses the cheaper Haiku model.
+AI analysis is now targeted and highly thorough based on user-selected months.
+Web search is OFF by default to keep it cheap (~1 cent); tick the box to add 
+cited sources (~10-15 cents). Uses the cheaper Haiku model.
 
 HOW TO RUN (needs internet -- run on your own Mac):
     pip3 install streamlit yfinance pandas requests anthropic
@@ -136,35 +136,46 @@ def macro_to_text(macro: dict) -> str:
     return "\n".join(lines) or "(no US economic data returned)"
 
 
-# ============================ AI ANALYSIS (month by month) ==============
+# ============================ AI ANALYSIS (Targeted & Thorough) ==========
 @st.cache_data(ttl=30 * 60, show_spinner=False)
-def analyze_with_ai(pair_name: str, context: str, use_search: bool) -> dict:
+def analyze_with_ai(pair_name: str, price_context: str, macro_context: str, selected_months: list, use_search: bool) -> dict:
     if not os.environ.get("ANTHROPIC_API_KEY"):
         return {"error": "no_key"}
     try:
         from anthropic import Anthropic
         client = Anthropic()
+        
         if use_search:
-            source_instr = ("Use web search to find the real events, central-bank decisions, "
-                            "and news for each month, and attribute claims to a source in the "
-                            "prose, e.g. 'According to Reuters, the Fed held rates...'.")
+            source_instr = (
+                "CRITICAL: Use web search to uncover the exact key calendar dates, central-bank decisions (Fed, ECB, BoE, BI, etc.), "
+                "and unexpected geopolitical or economic prints that occurred during these requested months. Attribute claims to sources."
+            )
         else:
-            source_instr = ("Base your explanation only on the data provided below; do not "
-                            "invent events you cannot see in the data.")
+            source_instr = "Base your explanation contextually on the provided data matrices below; do not invent figures or events outside the timelines."
+
+        months_str = ", ".join(selected_months)
+        
         prompt = (
-            f"You are a forex analyst. Below is {pair_name}'s monthly price trend (most recent "
-            f"first) and dated US economic data. Write a MONTH-BY-MONTH analysis, most recent "
-            f"month first. Begin each month in bold like '**2026-06:**' then 1-2 sentences "
-            f"giving the price move and its main driver. {source_instr} Do not invent figures. "
-            f"Keep each month tight.\n\n{context}"
+            f"You are a Senior Macro Forex Strategist. Provide a highly thorough, detailed, and institutional-grade deep dive analysis "
+            f"ONLY for the following specific months: {months_str}.\n\n"
+            f"For each requested month, your output must follow this exact structure:\n"
+            f"### **[Month Year]** (e.g., ### **May 2026**)\n"
+            f"- **Price Action Summary**: 1-2 sharp sentences tying together the open, close, and overall direction of the pair.\n"
+            f"- **Main Key Dates & Macro Events**: Pinpoint specific key dates or high-impact release windows (e.g., FOMC meeting weeks, NFP/CPI drops, specific policy rate shifts) that dictated sentiment.\n"
+            f"- **Fundamental Causal Analysis**: Thoroughly analyze exactly HOW those events, data surprises, or central bank actions fundamentally altered capital flows and directly impacted the strength/weakness of {pair_name}.\n\n"
+            f"{source_instr}\n\n"
+            f"PRICE TREND MATRIX FOR CONTEXT:\n{price_context}\n\n"
+            f"US MACRO ECONOMIC DATA MATRIX FOR CONTEXT:\n{macro_context}"
         )
+
         kwargs = dict(
-            model="claude-haiku-4-5-20251001",   # cheap; swap to "claude-sonnet-4-6" for richer
-            max_tokens=1200,
+            model="claude-haiku-4-5-20251001",
+            max_tokens=2000, # Expanded token limit to allow thorough deep dives
             messages=[{"role": "user", "content": prompt}],
         )
         if use_search:
-            kwargs["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}]
+            kwargs["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 4}]
+        
         msg = client.messages.create(**kwargs)
         text_parts, sources, seen = [], [], set()
         for block in msg.content:
@@ -215,29 +226,49 @@ else:
         st.metric(label=f"{choice} -- {latest['Month']}", value=latest["Close"],
                   delta=f"{latest['Change %']}%  (USD ended {latest['USD ended']})")
         st.line_chart(df["Close"], height=260)
+        
         st.subheader("Monthly summary")
         st.dataframe(summary, use_container_width=True, hide_index=True)
 
-        st.subheader("AI analysis (month by month)")
+        # ---- TARGETED AI ANALYSIS BLOCK ----
+        st.divider()
+        st.subheader("Targeted AI Analysis Deep-Dive")
+        
+        # Pull list of unique months directly from the data layout
+        available_months = summary["Month"].tolist()
+        
+        selected_months = st.multiselect(
+            "Select specific month(s) to analyze thoroughly:",
+            options=available_months,
+            default=[available_months[0]] if available_months else None,
+            help="To maintain token efficiency and granular accuracy, choose only the target frames you want detailed event breakdowns for."
+        )
+        
         use_search = st.checkbox(
-            "Search the web for sources (richer + cites sources; ~10-15c per click vs ~1c)",
+            "Search the web for historical macro calendars (~10-15c per click vs ~1c for rich, cited details)",
             value=False)
-        if st.button(f"Analyze {choice} by month"):
-            with st.spinner("Working..."):
-                macro = load_us_macro()
-                context = (
-                    f"PRICE TREND -- monthly summary (most recent first):\n"
-                    f"{summary.head(6).to_string(index=False)}\n\n"
-                    f"US ECONOMIC DATA (dated, drives all USD pairs):\n{macro_to_text(macro)}"
-                )
-                result = analyze_with_ai(choice, context, use_search)
-            if result.get("error") == "no_key":
-                st.info("Add your Anthropic API key (see setup notes) to turn this on.")
-            elif "error" in result:
-                st.error(f"AI error: {result['error']}")
+            
+        if st.button(f"Analyze Selected Frames for {choice}"):
+            if not selected_months:
+                st.warning("Please tick at least one month frame to initiate analysis.")
             else:
-                st.markdown(result["text"])
-                if result.get("sources"):
-                    st.markdown("**Sources**")
-                    for title, url in result["sources"]:
-                        st.markdown(f"- [{title}]({url})")
+                with st.spinner("Executing structural macro analysis... Please wait..."):
+                    macro = load_us_macro()
+                    
+                    # Filter price summary down strictly to selected frames to minimize token waste
+                    filtered_summary = summary[summary["Month"].isin(selected_months)]
+                    price_context = filtered_summary.to_string(index=False)
+                    macro_context = macro_to_text(macro)
+                    
+                    result = analyze_with_ai(choice, price_context, macro_context, selected_months, use_search)
+                    
+                if result.get("error") == "no_key":
+                    st.info("Add your Anthropic API key (see setup notes) to turn this on.")
+                elif "error" in result:
+                    st.error(f"AI error: {result['error']}")
+                else:
+                    st.markdown(result["text"])
+                    if result.get("sources"):
+                        st.markdown("**Sources Uncovered**")
+                        for title, url in result["sources"]:
+                            st.markdown(f"- [{title}]({url})")
