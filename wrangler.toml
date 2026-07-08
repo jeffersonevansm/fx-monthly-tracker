@@ -1,0 +1,7 @@
+# Cloudflare Worker config -- makes `npx wrangler deploy` work for this repo.
+# The Python files in this repo are the Streamlit app (hosted on Streamlit
+# Cloud); this worker only proxies that app onto a custom domain.
+name = "fx-monthly-tracker"
+main = "worker.js"
+compatibility_date = "2026-07-01"
+workers_dev = true
