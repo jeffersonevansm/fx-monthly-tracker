@@ -119,7 +119,9 @@ div[role="radiogroup"] label:hover {background: var(--hover); border-color: var(
 div[role="radiogroup"] label:has(input:checked) {background: rgba(37,99,235,.13);
   border-color: rgba(37,99,235,.40);}
 div[role="radiogroup"] label:has(input:checked) p {color: var(--text) !important;}
-div[role="radiogroup"] label > div:first-child {display: none;}
+div[role="radiogroup"] label > div:first-child,
+div[role="radiogroup"] label > div:first-of-type {display: none;}
+div[role="radiogroup"] label input[type="radio"] {display: none;}
 div[role="radiogroup"] label p {font-size: 13px; font-weight: 500; color: var(--text2); white-space: nowrap;}
 
 /* ---------- buttons ---------- */
@@ -502,13 +504,15 @@ def generate_report(pair: str, ym: str, price_ctx: str, tech_ctx: str,
             f"{REPORT_SCHEMA}\n\n"
             f"Rules: \"bias\" is the direction of {pair} itself next month. \"confidence\" is an integer 0-100. "
             f"Event dates must fall inside {label}. country_code is ISO-2 (US, EU, GB, AU, NZ, ID...). "
-            f"Be specific and causal; institutional tone; no filler.\n\n"
+            f"Be specific and causal; institutional tone; no filler. "
+            f"NEVER put <cite> tags, citation markers, footnotes or URLs inside JSON strings. "
+            f"Write no prose before or after the JSON object.\n\n"
             f"PRICE ACTION MATRIX (monthly):\n{price_ctx}\n\n"
             f"TECHNICAL READOUT (as of {label} close):\n{tech_ctx}\n\n"
             f"US MACRO DATA (FRED):\n{macro_ctx}\n\n"
             f"RECENT MARKET HEADLINES (sentiment context):\n{news_ctx or '(none provided)'}"
         )
-        kwargs = dict(model="claude-haiku-4-5-20251001", max_tokens=3500,
+        kwargs = dict(model="claude-haiku-4-5-20251001", max_tokens=8000,
                       messages=[{"role": "user", "content": prompt}])
         if use_search:
             kwargs["tools"] = [{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}]
@@ -529,18 +533,72 @@ def generate_report(pair: str, ym: str, price_ctx: str, tech_ctx: str,
         return {"error": str(e)}
 
 
-def _extract_json(text: str):
-    text = re.sub(r"```(?:json)?", "", text)
-    s, e = text.find("{"), text.rfind("}")
-    if s == -1 or e <= s:
-        return None
-    chunk = text[s:e + 1]
-    for candidate in (chunk, re.sub(r",\s*([}\]])", r"\1", chunk)):
+CITE_RE = re.compile(r"</?cite[^>]*>")
+
+def _clean_strings(obj):
+    """Remove citation tags / collapse whitespace in every string of the report."""
+    if isinstance(obj, str):
+        return re.sub(r"\s+", " ", CITE_RE.sub("", obj)).strip()
+    if isinstance(obj, list):
+        return [_clean_strings(x) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _clean_strings(v) for k, v in obj.items()}
+    return obj
+
+
+def _close_open(chunk: str) -> str:
+    """Close any unterminated string and unbalanced braces/brackets."""
+    stack, in_str, esc = [], False, False
+    for ch in chunk:
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch in "{[":
+            stack.append("}" if ch == "{" else "]")
+        elif ch in "}]" and stack:
+            stack.pop()
+    if in_str:
+        chunk += '"'
+    chunk = re.sub(r"[,:\s]+$", "", chunk)
+    return chunk + "".join(reversed(stack))
+
+
+def _repair_json(chunk: str):
+    """Best-effort parse of truncated JSON: close it, else chop back and retry."""
+    for _ in range(60):
         try:
-            return json.loads(candidate)
+            return json.loads(_close_open(chunk))
         except Exception:
-            continue
+            cut = max(chunk.rfind(","), chunk.rfind("{"), chunk.rfind("["))
+            if cut <= 0:
+                return None
+            chunk = chunk[:cut]
     return None
+
+
+def _extract_json(text: str):
+    # cite tags (from web-search citations) can carry raw quotes that break JSON:
+    # strip them from the raw text BEFORE parsing.
+    text = CITE_RE.sub("", re.sub(r"```(?:json)?", "", text))
+    s = text.find("{")
+    if s == -1:
+        return None
+    e = text.rfind("}")
+    if e > s:
+        chunk = text[s:e + 1]
+        for candidate in (chunk, re.sub(r",\s*([}\]])", r"\1", chunk)):
+            try:
+                return _clean_strings(json.loads(candidate))
+            except Exception:
+                pass
+    repaired = _repair_json(text[s:])
+    return _clean_strings(repaired) if repaired is not None else None
 
 
 # ============================ UI COMPONENTS ==============================
@@ -863,8 +921,15 @@ def render_ai_research(pair, cfg, ym, summary, tech, res, rep):
                 news = load_news("forex")
                 news_ctx = "\n".join("- " + (n.get("headline") or "")
                                      for n in news.get("items", [])[:10])
-            result = generate_report(pair, ym, price_ctx, technicals_to_text(tech),
-                                     macro_to_text(macro), news_ctx, use_search)
+            args = (pair, ym, price_ctx, technicals_to_text(tech),
+                    macro_to_text(macro), news_ctx, use_search)
+            prev = st.session_state["reports"].get(f"{pair}|{ym}")
+            if isinstance(prev, dict) and (prev.get("error") or not prev.get("report")):
+                try:            # last attempt failed -> bypass the 24h cache and retry fresh
+                    generate_report.clear(*args)
+                except Exception:
+                    generate_report.clear()
+            result = generate_report(*args)
         st.session_state["reports"][f"{pair}|{ym}"] = result
         st.rerun()
 
@@ -880,8 +945,9 @@ def render_ai_research(pair, cfg, ym, summary, tech, res, rep):
         st.error(f"AI error: {res['error']}")
         return
     if rep is None:
-        st.warning("The model reply could not be parsed into a report — raw output below.")
-        st.markdown(res.get("raw", ""))
+        st.warning("The model reply could not be parsed into a report — raw output below. "
+                   "Click Generate research again to retry.")
+        st.markdown(CITE_RE.sub("", res.get("raw", "")))
         return
 
     n = 6
