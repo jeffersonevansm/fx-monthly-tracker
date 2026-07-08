@@ -1,0 +1,6 @@
+streamlit>=1.49
+yfinance
+pandas
+requests
+anthropic
+plotly
