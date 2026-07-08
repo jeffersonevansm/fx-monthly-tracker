@@ -119,9 +119,9 @@ div[role="radiogroup"] label:hover {background: var(--hover); border-color: var(
 div[role="radiogroup"] label:has(input:checked) {background: rgba(37,99,235,.13);
   border-color: rgba(37,99,235,.40);}
 div[role="radiogroup"] label:has(input:checked) p {color: var(--text) !important;}
-div[role="radiogroup"] label > div:first-child,
-div[role="radiogroup"] label > div:first-of-type {display: none;}
-div[role="radiogroup"] label input[type="radio"] {display: none;}
+div[role="radiogroup"] label > span {display: none;}  /* hidden radio input wrapper */
+div[role="radiogroup"] label div:has(> div[data-testid="stMarkdownContainer"])
+  > div:not([data-testid="stMarkdownContainer"]) {display: none;}  /* the circle, not the text */
 div[role="radiogroup"] label p {font-size: 13px; font-weight: 500; color: var(--text2); white-space: nowrap;}
 
 /* ---------- buttons ---------- */
