@@ -1,0 +1,843 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FX Monthly Tracker — Monthly FX Research</title>
+<meta name="description" content="Institutional-style monthly FX research: DXY, EUR/USD, GBP/USD, AUD/USD, NZD/USD, USD/IDR.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:#09090B; --card:#111113; --card2:#0D0D0F;
+  --border:rgba(255,255,255,0.06); --border2:rgba(255,255,255,0.13);
+  --text:#FAFAFA; --text2:#A1A1AA; --text3:#6B6B74;
+  --navbg:rgba(17,17,19,0.72); --hover:rgba(255,255,255,0.025);
+  --shadow:0 10px 34px rgba(0,0,0,0.38);
+  --accent:#2563EB; --accent2:#3B82F6; --pos:#22C55E; --neg:#EF4444; --warn:#F59E0B;
+}
+html.light {
+  --bg:#FAFAFA; --card:#FFFFFF; --card2:#F4F4F5;
+  --border:rgba(0,0,0,0.07); --border2:rgba(0,0,0,0.16);
+  --text:#09090B; --text2:#52525B; --text3:#8E8E96;
+  --navbg:rgba(255,255,255,0.78); --hover:rgba(0,0,0,0.02);
+  --shadow:0 10px 30px rgba(0,0,0,0.07);
+}
+* { box-sizing:border-box; }
+html, body { margin:0; padding:0; }
+body { background:var(--bg); color:var(--text); font-family:'Inter',-apple-system,'Segoe UI',Roboto,sans-serif;
+  font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+a { color:var(--accent2); }
+::-webkit-scrollbar { width:9px; height:9px; }
+::-webkit-scrollbar-thumb { background:var(--border2); border-radius:99px; }
+::-webkit-scrollbar-track { background:transparent; }
+
+.wrap { max-width:1140px; margin:0 auto; padding:14px 22px 80px; }
+
+@keyframes lxfade { from { opacity:0; transform:translateY(9px); } to { opacity:1; transform:none; } }
+.lx-fade { animation:lxfade .55s cubic-bezier(.21,.6,.35,1) both; }
+@keyframes lxspin { to { transform:rotate(360deg); } }
+.lx-spin { display:inline-block; width:14px; height:14px; border:2px solid var(--border2);
+  border-top-color:var(--accent2); border-radius:50%; animation:lxspin .7s linear infinite; vertical-align:-2px; }
+
+/* ---------- navbar ---------- */
+.lx-nav { position:sticky; top:12px; z-index:99; display:flex; align-items:center; gap:14px;
+  background:var(--navbg); backdrop-filter:blur(16px) saturate(1.4); -webkit-backdrop-filter:blur(16px) saturate(1.4);
+  border:1px solid var(--border); border-radius:15px; padding:10px 18px; box-shadow:var(--shadow); }
+.lx-logo { display:flex; align-items:center; gap:10px; white-space:nowrap; margin-right:6px; }
+.lx-logo-mark { width:12px; height:12px; border-radius:4px; background:var(--accent);
+  box-shadow:0 0 14px rgba(37,99,235,.55); flex:none; }
+.lx-logo-name { font-size:14.5px; font-weight:700; letter-spacing:-.01em; }
+.lx-logo-tag { font-size:10px; font-weight:600; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--text3); border:1px solid var(--border2); padding:2px 8px; border-radius:99px; }
+.lx-navpills { display:flex; gap:6px; flex-wrap:wrap; flex:1; }
+.lx-light { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text2); cursor:pointer; user-select:none; }
+.lx-switch { width:34px; height:19px; border-radius:99px; background:var(--hover); border:1px solid var(--border2);
+  position:relative; transition:background .2s; flex:none; }
+.lx-switch::after { content:""; position:absolute; top:2px; left:2px; width:13px; height:13px; border-radius:50%;
+  background:var(--text2); transition:left .2s, background .2s; }
+html.light .lx-switch { background:rgba(37,99,235,.25); }
+html.light .lx-switch::after { left:17px; background:var(--accent); }
+
+/* ---------- pills / buttons / inputs ---------- */
+.pill { background:transparent; border:1px solid transparent; border-radius:99px; padding:5px 14px;
+  font:500 13px 'Inter',sans-serif; color:var(--text2); cursor:pointer; transition:all .18s ease; white-space:nowrap; }
+.pill:hover { background:var(--hover); border-color:var(--border); }
+.pill.on { background:rgba(37,99,235,.13); border-color:rgba(37,99,235,.40); color:var(--text); }
+.lx-btn { background:var(--card); color:var(--text); border:1px solid var(--border2); border-radius:10px;
+  padding:8px 17px; font:500 13.5px 'Inter',sans-serif; cursor:pointer; transition:all .18s ease; }
+.lx-btn:hover { border-color:rgba(37,99,235,.55); background:rgba(37,99,235,.09); transform:translateY(-1px); }
+.lx-btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+.lx-btn.primary:hover { background:#1D4ED8; border-color:#1D4ED8; }
+.lx-btn.block { width:100%; }
+.lx-btn:disabled { opacity:.55; cursor:default; transform:none; }
+select.lx-select { background:var(--card); color:var(--text); border:1px solid var(--border2); border-radius:10px;
+  padding:7px 12px; font:500 13.5px 'Inter',sans-serif; cursor:pointer; outline:none; }
+.lx-check { display:flex; align-items:center; gap:9px; font-size:13px; color:var(--text2); cursor:pointer; user-select:none; }
+.lx-check input { accent-color:var(--accent); width:15px; height:15px; cursor:pointer; }
+
+/* ---------- layout blocks ---------- */
+.lx-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:14px; }
+.lx-pills { display:flex; gap:6px; flex-wrap:wrap; }
+
+.lx-card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:20px 22px;
+  transition:transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+  animation:lxfade .55s cubic-bezier(.21,.6,.35,1) both; }
+.lx-card:hover { transform:translateY(-2px); border-color:var(--border2); box-shadow:var(--shadow); }
+.lx-card.flat:hover { transform:none; box-shadow:none; }
+.lx-grid { display:grid; gap:14px; }
+.lx-grid.c2 { grid-template-columns:1fr 1fr; }
+.lx-grid.c3 { grid-template-columns:1fr 1fr 1fr; }
+.lx-grid > .lx-card:nth-child(2) { animation-delay:.06s; }
+.lx-grid > .lx-card:nth-child(3) { animation-delay:.12s; }
+.lx-grid > .lx-card:nth-child(4) { animation-delay:.18s; }
+.lx-grid > .lx-card:nth-child(5) { animation-delay:.24s; }
+.lx-grid > .lx-card:nth-child(6) { animation-delay:.30s; }
+@media (max-width:920px) { .lx-grid.c2, .lx-grid.c3 { grid-template-columns:1fr; } }
+
+.lx-hero { padding:44px 0 8px; }
+.lx-hero-month { font-size:13px; color:var(--accent2); font-weight:600; letter-spacing:.16em; text-transform:uppercase; }
+.lx-hero-title { font-size:42px; font-weight:750; letter-spacing:-.022em; line-height:1.12; margin:12px 0 14px; max-width:850px; }
+.lx-hero-sub { font-size:16px; color:var(--text2); line-height:1.7; max-width:760px; }
+.lx-hero-sub.placeholder { color:var(--text3); font-style:italic; }
+@media (max-width:700px) { .lx-hero-title { font-size:30px; } }
+
+.lx-sec { margin:42px 0 16px; display:flex; align-items:baseline; gap:14px; }
+.lx-sec-num { font-size:12px; color:var(--accent2); font-weight:600; letter-spacing:.08em; }
+.lx-sec-title { font-size:21px; font-weight:650; letter-spacing:-.015em; }
+.lx-sec-line { flex:1; height:1px; background:var(--border); align-self:center; }
+
+.lx-kpi-label { font-size:11.5px; text-transform:uppercase; letter-spacing:.09em; color:var(--text2); font-weight:600; }
+.lx-kpi-value { font-size:29px; font-weight:700; letter-spacing:-.01em; margin-top:7px; font-variant-numeric:tabular-nums; }
+.lx-kpi-sub { font-size:12.5px; color:var(--text2); margin-top:5px; }
+
+.lx-chip { display:inline-block; font-size:11px; padding:3px 10px; border-radius:99px; font-weight:600;
+  letter-spacing:.02em; vertical-align:middle; }
+.lx-chip.pos { background:rgba(34,197,94,.12); color:var(--pos); }
+.lx-chip.neg { background:rgba(239,68,68,.12); color:var(--neg); }
+.lx-chip.warn { background:rgba(245,158,11,.13); color:var(--warn); }
+.lx-chip.info { background:rgba(37,99,235,.13); color:var(--accent2); }
+.lx-chip.muted { background:var(--hover); color:var(--text2); border:1px solid var(--border); }
+
+.lx-table { width:100%; border-collapse:collapse; font-size:13px; }
+.lx-table th { text-align:right; padding:9px 12px; color:var(--text2); font-weight:600; font-size:11px;
+  text-transform:uppercase; letter-spacing:.07em; border-bottom:1px solid var(--border); }
+.lx-table th:first-child, .lx-table td:first-child { text-align:left; }
+.lx-table td { text-align:right; padding:9.5px 12px; border-bottom:1px solid var(--border);
+  font-variant-numeric:tabular-nums; }
+.lx-table tr:last-child td { border-bottom:none; }
+.lx-table tbody tr { transition:background .15s ease; }
+.lx-table tbody tr:hover { background:var(--hover); }
+
+.lx-tl { position:relative; margin:6px 0 6px 10px; padding-left:30px; }
+.lx-tl::before { content:""; position:absolute; left:0; top:10px; bottom:10px; width:1px; background:var(--border2); }
+.lx-tl-item { position:relative; padding:4px 0 22px; }
+.lx-tl-item::before { content:""; position:absolute; left:-34.5px; top:9px; width:8px; height:8px; border-radius:50%;
+  background:var(--bg); border:2px solid var(--accent); }
+.lx-tl-date { font-size:11.5px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--accent2); }
+.lx-tl-head { font-size:14.5px; font-weight:600; margin:4px 0 2px; }
+.lx-tl-afp { font-size:12px; color:var(--text2); margin:3px 0; font-variant-numeric:tabular-nums; }
+.lx-tl-afp b { color:var(--text); font-weight:600; }
+.lx-tl-body { font-size:13px; color:var(--text2); line-height:1.62; max-width:720px; }
+
+.lx-risk { border-left:3px solid var(--warn); border-radius:10px; background:var(--card);
+  border-top:1px solid var(--border); border-right:1px solid var(--border); border-bottom:1px solid var(--border);
+  padding:15px 18px; margin-bottom:10px; animation:lxfade .5s ease both; }
+.lx-risk.high { border-left-color:var(--neg); }
+.lx-risk.low { border-left-color:var(--accent2); }
+.lx-risk-title { font-size:13.5px; font-weight:650; margin-bottom:3px; }
+.lx-risk-body { font-size:13px; color:var(--text2); line-height:1.6; }
+
+.lx-outlook { border:1px solid rgba(37,99,235,.32); border-radius:16px; padding:28px 30px;
+  background:linear-gradient(180deg, rgba(37,99,235,.075), rgba(37,99,235,0) 55%), var(--card);
+  animation:lxfade .6s ease both; }
+.lx-bar { height:6px; border-radius:99px; background:var(--hover); border:1px solid var(--border);
+  overflow:hidden; margin-top:8px; }
+.lx-bar-fill { height:100%; border-radius:99px; background:linear-gradient(90deg,var(--accent),var(--accent2));
+  transition:width 1s cubic-bezier(.2,.7,.3,1); }
+.lx-mini-label { font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:var(--text3); font-weight:650; }
+
+.lx-news-head { font-size:15px; font-weight:600; line-height:1.45; }
+.lx-news-head a { color:var(--text); text-decoration:none; transition:color .15s ease; }
+.lx-news-head a:hover { color:var(--accent2); }
+.lx-meta { font-size:12px; color:var(--text3); margin:5px 0 8px; }
+.lx-body { font-size:13.5px; color:var(--text2); line-height:1.66; }
+.lx-footer { margin-top:70px; padding-top:22px; border-top:1px solid var(--border); font-size:12px;
+  color:var(--text3); text-align:center; line-height:1.8; }
+a.lx-src { color:var(--accent2); text-decoration:none; font-size:13px; }
+a.lx-src:hover { text-decoration:underline; }
+
+.lx-chartcard { background:var(--card); border:1px solid var(--border); border-radius:14px;
+  padding:18px 16px 10px; transition:border-color .2s ease; }
+.lx-chartcard:hover { border-color:var(--border2); }
+.lx-aipanel { background:var(--card2); border:1px solid var(--border); border-radius:14px; padding:18px 20px;
+  display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+.lx-loading { color:var(--text3); font-size:13.5px; padding:26px 4px; }
+.lx-dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:9px; flex:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="lx-nav">
+    <div class="lx-logo">
+      <span class="lx-logo-mark"></span>
+      <span class="lx-logo-name">FX Monthly Tracker</span>
+      <span class="lx-logo-tag">Research</span>
+    </div>
+    <div class="lx-navpills" id="navpills"></div>
+    <div class="lx-light" id="lighttoggle"><span class="lx-switch"></span><span>Light</span></div>
+  </nav>
+  <main id="view"></main>
+  <footer class="lx-footer">
+    FX Monthly Tracker — forexanalyst.org · Prices: Yahoo Finance · News: Finnhub · Macro: FRED · Analysis: Claude (Anthropic)<br>
+    For research and educational purposes only. Not investment advice.
+  </footer>
+</div>
+
+<script>
+"use strict";
+/* ============================ config / state ============================ */
+const PAIRS = {
+  "DXY":     { flag:"🇺🇸", name:"US Dollar Index",      dp:2 },
+  "EUR/USD": { flag:"🇪🇺", name:"Euro",                 dp:4 },
+  "GBP/USD": { flag:"🇬🇧", name:"British Pound",        dp:4 },
+  "AUD/USD": { flag:"🇦🇺", name:"Australian Dollar",    dp:4 },
+  "NZD/USD": { flag:"🇳🇿", name:"New Zealand Dollar",   dp:4 },
+  "USD/IDR": { flag:"🇮🇩", name:"Indonesian Rupiah",    dp:0 },
+};
+const FLAGS = { US:"🇺🇸", EU:"🇪🇺", EZ:"🇪🇺", GB:"🇬🇧", UK:"🇬🇧", AU:"🇦🇺", NZ:"🇳🇿",
+  ID:"🇮🇩", JP:"🇯🇵", CN:"🇨🇳", CA:"🇨🇦", CH:"🇨🇭", DE:"🇩🇪", FR:"🇫🇷", GL:"🌐" };
+const VIEWS = ["Reports", "Dashboard", "Archive", "News", "About"];
+const RANGES = { "3M":63, "6M":126, "1Y":252, "2Y":9999 };
+
+const state = {
+  view: "Reports", pair: "DXY", range: "6M", newsCat: "forex",
+  monthByPair: {}, pairData: {}, reports: {}, pending: {}, chart: null,
+};
+
+/* ============================ utils ===================================== */
+const $ = (sel) => document.querySelector(sel);
+const esc = (s) => String(s == null ? "" : s)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+const fmt = (v, dp) => (v == null || isNaN(v)) ? "–"
+  : Number(v).toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
+const MONTHS_EN = ["January","February","March","April","May","June","July",
+  "August","September","October","November","December"];
+const monthLabel = (ym) => MONTHS_EN[parseInt(ym.slice(5), 10) - 1] + " " + ym.slice(0, 4);
+const chgChip = (pct, suffix) => {
+  const cls = pct > 0 ? "pos" : pct < 0 ? "neg" : "muted";
+  return `<span class="lx-chip ${cls}">${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%${esc(suffix || "")}</span>`;
+};
+const IMPACT_CLS = { bullish:"pos", bearish:"neg", mixed:"warn", high:"neg", medium:"warn", low:"info" };
+const impactChip = (v) => {
+  const k = String(v || "").toLowerCase();
+  return `<span class="lx-chip ${IMPACT_CLS[k] || "muted"}">${esc(k || "n/a")}</span>`;
+};
+const section = (num, title) =>
+  `<div class="lx-sec"><span class="lx-sec-num">${num}</span><span class="lx-sec-title">${esc(title)}</span><span class="lx-sec-line"></span></div>`;
+const loading = (msg) => `<div class="lx-loading"><span class="lx-spin"></span>&nbsp; ${esc(msg)}</div>`;
+
+function sparklineSvg(closes, color) {
+  if (!closes || closes.length < 2) return "";
+  const w = 260, h = 46;
+  let lo = Math.min.apply(null, closes), hi = Math.max.apply(null, closes);
+  const rng = (hi - lo) || 1e-9;
+  const pts = closes.map((v, i) =>
+    (i / (closes.length - 1) * w).toFixed(1) + "," + (h - 4 - (v - lo) / rng * (h - 8)).toFixed(1));
+  const line = pts.join(" ");
+  return `<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">` +
+    `<polygon points="0,${h} ${line} ${w},${h}" fill="${color}" opacity="0.08"></polygon>` +
+    `<polyline points="${line}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"></polyline></svg>`;
+}
+
+/* ============================ data ====================================== */
+async function fetchPair(pair) {
+  if (state.pairData[pair]) return state.pairData[pair];
+  const r = await fetch("/api/pair?name=" + encodeURIComponent(pair));
+  const j = await r.json();
+  if (j.error) throw new Error(j.error);
+  state.pairData[pair] = j;
+  return j;
+}
+
+function defaultMonth(months) {
+  const now = new Date();
+  const cur = now.getUTCFullYear() + "-" + String(now.getUTCMonth() + 1).padStart(2, "0");
+  if (months.length > 1 && months[0].ym === cur) return months[1].ym;
+  return months.length ? months[0].ym : cur;
+}
+
+/* ============================ router ==================================== */
+function route(view) {
+  state.view = view;
+  document.querySelectorAll("#navpills .pill").forEach((b) =>
+    b.classList.toggle("on", b.dataset.v === view));
+  const v = $("#view");
+  v.innerHTML = "";
+  ({ Reports: renderReports, Dashboard: renderDashboard, Archive: renderArchive,
+     News: renderNews, About: renderAbout }[view] || renderReports)(v);
+  window.scrollTo({ top: 0 });
+}
+
+function pairPills(active, onPick) {
+  const div = document.createElement("div");
+  div.className = "lx-pills";
+  Object.keys(PAIRS).forEach((p) => {
+    const b = document.createElement("button");
+    b.className = "pill" + (p === active ? " on" : "");
+    b.textContent = p;
+    b.onclick = () => onPick(p);
+    div.appendChild(b);
+  });
+  return div;
+}
+
+function errorCard(v, msg, retry) {
+  const d = document.createElement("div");
+  d.className = "lx-card flat";
+  d.style.marginTop = "24px";
+  d.innerHTML = `<span class="lx-chip warn">data</span>
+    <div class="lx-news-head" style="margin-top:10px;">${esc(msg)}</div>
+    <div class="lx-body" style="margin-top:6px;">The data source may be rate-limiting. Try again shortly.</div>
+    <div style="margin-top:14px;"><button class="lx-btn">Retry</button></div>`;
+  d.querySelector("button").onclick = retry;
+  v.appendChild(d);
+}
+
+/* ============================ dashboard ================================= */
+async function renderDashboard(v) {
+  v.innerHTML = `<div class="lx-hero lx-fade" style="padding-bottom:4px;">
+    <div class="lx-hero-month">Dashboard</div>
+    <div class="lx-hero-title" style="font-size:34px;">Month-to-date across the board</div>
+    <div class="lx-hero-sub">Live monthly performance for all tracked pairs. Open any pair to read its full research report.</div>
+  </div>` + loading("Loading pairs…");
+  const results = await Promise.allSettled(Object.keys(PAIRS).map(fetchPair));
+  if (state.view !== "Dashboard") return;
+  const data = {};
+  Object.keys(PAIRS).forEach((p, i) => {
+    if (results[i].status === "fulfilled") data[p] = results[i].value;
+  });
+  v.querySelector(".lx-loading").remove();
+  if (!Object.keys(data).length) return errorCard(v, "Could not load market prices", () => route("Dashboard"));
+
+  const kpis = [];
+  if (data["DXY"]) {
+    const r = data["DXY"].months[0];
+    const col = r.chgPct > 0 ? "var(--pos)" : "var(--neg)";
+    kpis.push(["DXY — " + monthLabel(r.ym),
+      `<span style="color:${col};">${r.chgPct >= 0 ? "+" : ""}${r.chgPct.toFixed(2)}%</span>`,
+      "close " + fmt(r.close, 2)]);
+  }
+  const cur = {};
+  Object.keys(data).forEach((p) => {
+    if (p === "DXY") return;
+    const r = data[p].months[0];
+    const usdBase = p.indexOf("USD/") === 0;
+    const ccy = usdBase ? p.split("/")[1] : p.split("/")[0];
+    cur[ccy] = usdBase ? -r.chgPct : r.chgPct;
+  });
+  const ccys = Object.keys(cur);
+  if (ccys.length) {
+    const best = ccys.reduce((a, b) => cur[a] >= cur[b] ? a : b);
+    const worst = ccys.reduce((a, b) => cur[a] <= cur[b] ? a : b);
+    kpis.push(["Strongest vs USD", `<span style="color:var(--pos);">${esc(best)}</span>`,
+      (cur[best] >= 0 ? "+" : "") + cur[best].toFixed(2) + "% this month"]);
+    kpis.push(["Weakest vs USD", `<span style="color:var(--neg);">${esc(worst)}</span>`,
+      (cur[worst] >= 0 ? "+" : "") + cur[worst].toFixed(2) + "% this month"]);
+  }
+  const kpiHtml = `<div class="lx-grid c3">` + kpis.slice(0, 3).map(([lb, val, sub]) =>
+    `<div class="lx-card"><div class="lx-kpi-label">${esc(lb)}</div>
+     <div class="lx-kpi-value">${val}</div><div class="lx-kpi-sub">${esc(sub)}</div></div>`).join("") + `</div>`;
+
+  const cards = Object.keys(data).map((p) => {
+    const d = data[p], cfg = PAIRS[p], r = d.months[0];
+    const spark = sparklineSvg(d.candles.c.slice(-120), "#3B82F6");
+    return `<div class="lx-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:14px;font-weight:650;">${cfg.flag}&nbsp; ${esc(p)}</div>${chgChip(r.chgPct)}
+      </div>
+      <div style="font-size:11.5px;color:var(--text3);margin-top:2px;">${esc(cfg.name)}</div>
+      <div class="lx-kpi-value" style="font-size:25px;">${fmt(r.close, cfg.dp)}</div>
+      <div style="margin:10px 0 6px;">${spark}</div>
+      <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--text2);">
+        <span>H ${fmt(r.high, cfg.dp)}</span><span>L ${fmt(r.low, cfg.dp)}</span><span>USD ${esc(r.usdEnded)}</span>
+      </div>
+      <div style="margin-top:12px;"><button class="lx-btn block" data-open="${esc(p)}">Open report →</button></div>
+    </div>`;
+  }).join("");
+  v.insertAdjacentHTML("beforeend", kpiHtml + `<div style="height:14px;"></div><div class="lx-grid c3">${cards}</div>`);
+  v.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => { state.pair = b.dataset.open; route("Reports"); });
+}
+
+/* ============================ archive =================================== */
+async function renderArchive(v) {
+  v.innerHTML = `<div class="lx-hero lx-fade" style="padding-bottom:4px;">
+    <div class="lx-hero-month">Archive</div>
+    <div class="lx-hero-title" style="font-size:34px;">Past monthly reports</div>
+    <div class="lx-hero-sub">Every tracked month, per pair. Open one to view the full report and generate its AI research.</div>
+  </div>`;
+  const bar = document.createElement("div");
+  bar.className = "lx-toolbar";
+  bar.appendChild(pairPills(state.pair, (p) => { state.pair = p; route("Archive"); }));
+  v.appendChild(bar);
+  const holder = document.createElement("div");
+  holder.innerHTML = loading("Loading " + state.pair + "…");
+  v.appendChild(holder);
+  let d;
+  try { d = await fetchPair(state.pair); } catch (e) {
+    holder.innerHTML = ""; return errorCard(holder, "Could not load " + state.pair + " prices", () => route("Archive"));
+  }
+  if (state.view !== "Archive") return;
+  const cfg = PAIRS[state.pair];
+  holder.innerHTML = `<div style="height:14px;"></div><div class="lx-grid c3">` + d.months.map((r) => {
+    const done = state.reports[state.pair + "|" + r.ym];
+    return `<div class="lx-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:14.5px;font-weight:650;">${esc(monthLabel(r.ym))}</div>${chgChip(r.chgPct)}
+      </div>
+      <div style="font-size:12px;color:var(--text2);margin-top:8px;font-variant-numeric:tabular-nums;">
+        O ${fmt(r.open, cfg.dp)} &nbsp;·&nbsp; C ${fmt(r.close, cfg.dp)} &nbsp;·&nbsp; H ${fmt(r.high, cfg.dp)} &nbsp;·&nbsp; L ${fmt(r.low, cfg.dp)}
+      </div>
+      <div style="margin-top:8px;">${done ? '<span class="lx-chip info">report ready</span>' : ""}</div>
+      <div style="margin-top:10px;"><button class="lx-btn block" data-ym="${r.ym}">Read →</button></div>
+    </div>`;
+  }).join("") + `</div>`;
+  holder.querySelectorAll("[data-ym]").forEach((b) =>
+    b.onclick = () => { state.monthByPair[state.pair] = b.dataset.ym; route("Reports"); });
+}
+
+/* ============================ news ====================================== */
+async function renderNews(v) {
+  v.innerHTML = `<div class="lx-hero lx-fade" style="padding-bottom:4px;">
+    <div class="lx-hero-month">Market News</div>
+    <div class="lx-hero-title" style="font-size:34px;">Latest market headlines</div>
+    <div class="lx-hero-sub">Wire headlines from Finnhub, cleaned and de-cluttered.</div>
+  </div>`;
+  const bar = document.createElement("div");
+  bar.className = "lx-toolbar";
+  const pills = document.createElement("div");
+  pills.className = "lx-pills";
+  ["forex", "general", "crypto", "merger"].forEach((c) => {
+    const b = document.createElement("button");
+    b.className = "pill" + (c === state.newsCat ? " on" : "");
+    b.textContent = c;
+    b.onclick = () => { state.newsCat = c; route("News"); };
+    pills.appendChild(b);
+  });
+  bar.appendChild(pills);
+  v.appendChild(bar);
+  const holder = document.createElement("div");
+  holder.innerHTML = loading("Loading headlines…");
+  v.appendChild(holder);
+  const j = await (await fetch("/api/news?category=" + state.newsCat)).json();
+  if (state.view !== "News") return;
+  if (j.error === "no_key") {
+    holder.innerHTML = `<div class="lx-card flat" style="margin-top:14px;"><div class="lx-body">
+      News is not connected yet — add your <b>FINNHUB_API_KEY</b> in the Cloudflare worker settings
+      (Settings → Variables &amp; Secrets).</div></div>`;
+    return;
+  }
+  if (j.error) { holder.innerHTML = ""; return errorCard(holder, "Could not load news: " + j.error, () => route("News")); }
+  holder.innerHTML = `<div style="height:14px;"></div><div class="lx-grid" style="grid-template-columns:1fr;max-width:860px;">` +
+    (j.items || []).map((n) => {
+      const ts = n.datetime ? new Date(n.datetime * 1000).toLocaleString("en-US",
+        { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+      return `<div class="lx-card">
+        <div class="lx-news-head"><a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.headline)}</a></div>
+        <div class="lx-meta">${esc(n.source)} &nbsp;·&nbsp; ${esc(ts)}</div>
+        ${n.summary ? `<div class="lx-body">${esc(n.summary)}</div>` : ""}
+      </div>`;
+    }).join("") + `</div>`;
+}
+
+/* ============================ about ===================================== */
+async function renderAbout(v) {
+  v.innerHTML = `<div class="lx-hero lx-fade" style="padding-bottom:4px;">
+    <div class="lx-hero-month">About</div>
+    <div class="lx-hero-title" style="font-size:34px;">Monthly FX research, not a trading terminal</div>
+    <div class="lx-hero-sub">forexanalyst.org publishes institutional-style monthly research for major USD pairs.
+    Each report walks through price action, macro drivers, the economic calendar, technicals and a forward
+    outlook — generated on demand from live data.</div></div>`
+    + section("01", "Methodology")
+    + `<div class="lx-grid c3">
+      <div class="lx-card"><div class="lx-kpi-label" style="color:var(--accent2);">Fundamental</div>
+        <div class="lx-body" style="margin-top:9px;">Central-bank policy, rate differentials, inflation and employment data (FRED), and the macro narrative that moved capital flows during the month.</div></div>
+      <div class="lx-card"><div class="lx-kpi-label" style="color:var(--accent2);">Technical</div>
+        <div class="lx-body" style="margin-top:9px;">Trend, RSI, MACD, moving averages, market structure and classic pivot support/resistance — computed from daily data as of month end.</div></div>
+      <div class="lx-card"><div class="lx-kpi-label" style="color:var(--accent2);">Sentiment</div>
+        <div class="lx-body" style="margin-top:9px;">Positioning, risk appetite and the prevailing story in wire headlines, synthesized by Claude into a view on the month's mood.</div></div>
+    </div>`
+    + section("02", "Data Sources")
+    + `<div class="lx-grid c2" id="srcgrid">${loading("Checking connections…")}</div>`
+    + section("03", "Disclaimer")
+    + `<div class="lx-card flat"><div class="lx-body">This site is a personal research dashboard. Nothing here is
+      investment advice or a solicitation to trade. AI-generated content can contain errors — verify important
+      figures against primary sources.</div></div>`;
+  let s = { prices: true, news: false, macro: false, ai: false };
+  try { s = await (await fetch("/api/status")).json(); } catch (e) { /* defaults */ }
+  if (state.view !== "About") return;
+  const rows = [
+    ["Prices", "Yahoo Finance — daily OHLC", s.prices],
+    ["News", "Finnhub free tier", s.news],
+    ["US macro", "FRED (St. Louis Fed)", s.macro],
+    ["AI research", "Anthropic Claude (Haiku)", s.ai],
+  ];
+  $("#srcgrid").innerHTML = rows.map(([lb, tx, ok]) =>
+    `<div class="lx-card"><div style="display:flex;align-items:center;gap:9px;">
+      <span class="lx-dot" style="background:${ok ? "var(--pos)" : "var(--neg)"};"></span>
+      <span style="font-size:14px;font-weight:650;">${esc(lb)}</span>
+      <span class="lx-chip ${ok ? "pos" : "neg"}" style="margin-left:auto;">${ok ? "connected" : "not set"}</span></div>
+      <div class="lx-body" style="margin-top:8px;">${esc(tx)}</div></div>`).join("");
+}
+
+/* ============================ reports =================================== */
+async function renderReports(v) {
+  const bar = document.createElement("div");
+  bar.className = "lx-toolbar";
+  bar.appendChild(pairPills(state.pair, (p) => { state.pair = p; route("Reports"); }));
+  const sel = document.createElement("select");
+  sel.className = "lx-select";
+  bar.appendChild(sel);
+  v.appendChild(bar);
+  const holder = document.createElement("div");
+  holder.innerHTML = loading("Loading " + state.pair + " prices…");
+  v.appendChild(holder);
+
+  let d;
+  try { d = await fetchPair(state.pair); } catch (e) {
+    holder.innerHTML = "";
+    return errorCard(holder, "Could not load " + state.pair + " prices", () => route("Reports"));
+  }
+  if (state.view !== "Reports") return;
+
+  const pair = state.pair, cfg = PAIRS[pair], dp = cfg.dp;
+  if (!state.monthByPair[pair]) state.monthByPair[pair] = defaultMonth(d.months);
+  const ym = state.monthByPair[pair];
+  d.months.forEach((m) => {
+    const o = document.createElement("option");
+    o.value = m.ym; o.textContent = monthLabel(m.ym); o.selected = m.ym === ym;
+    sel.appendChild(o);
+  });
+  sel.onchange = () => { state.monthByPair[pair] = sel.value; route("Reports"); };
+
+  const row = d.months.find((m) => m.ym === ym) || d.months[0];
+  const tech = d.tech[ym];
+  const rk = pair + "|" + ym;
+  const res = state.reports[rk];
+  const rep = res && res.report;
+
+  // ---- hero + KPIs ----
+  let title;
+  if (rep && rep.headline) title = rep.headline;
+  else {
+    const moved = row.chgPct > 0 ? "Climbs" : row.chgPct < 0 ? "Slips" : "Holds Flat";
+    title = pair + " " + moved + " " + Math.abs(row.chgPct).toFixed(2) + "% — Dollar Ends the Month " +
+      row.usdEnded.charAt(0).toUpperCase() + row.usdEnded.slice(1);
+  }
+  const summaryTxt = (rep && rep.executive_summary) ||
+    "Generate the AI research below to produce this month's executive summary — a fundamental, technical and sentiment deep-dive written by Claude from live price, macro and news data.";
+  const retColor = row.chgPct > 0 ? "var(--pos)" : row.chgPct < 0 ? "var(--neg)" : "var(--text)";
+  holder.innerHTML = `
+    <div class="lx-hero lx-fade">
+      <div class="lx-hero-month">${cfg.flag}&nbsp; ${esc(pair)} — ${esc(monthLabel(ym))}</div>
+      <div class="lx-hero-title">${esc(title)}</div>
+      <div class="lx-hero-sub${rep ? "" : " placeholder"}">${esc(summaryTxt)}</div>
+    </div>
+    <div class="lx-grid c3">
+      <div class="lx-card"><div class="lx-kpi-label">${esc(pair)} return</div>
+        <div class="lx-kpi-value" style="color:${retColor};">${row.chgPct >= 0 ? "+" : ""}${row.chgPct.toFixed(2)}%</div>
+        <div class="lx-kpi-sub">USD ended ${esc(row.usdEnded)} · close ${fmt(row.close, dp)}</div></div>
+      <div class="lx-card"><div class="lx-kpi-label">Highest</div>
+        <div class="lx-kpi-value">${fmt(row.high, dp)}</div><div class="lx-kpi-sub">intramonth extreme</div></div>
+      <div class="lx-card"><div class="lx-kpi-label">Lowest</div>
+        <div class="lx-kpi-value">${fmt(row.low, dp)}</div><div class="lx-kpi-sub">intramonth extreme</div></div>
+    </div>
+    ${section("01", "Price Action")}
+    <div class="lx-pills" id="rangepills" style="margin-bottom:12px;"></div>
+    <div class="lx-chartcard"><canvas id="pricechart" height="105"></canvas></div>
+    ${section("02", "Monthly Summary")}
+    ${summaryTable(d.months, dp)}
+    ${section("03", "Technical Analysis")}
+    ${techGrid(tech, row, dp)}
+    ${tech ? section("04", "Support & Resistance") + levelsTable(tech, dp) : ""}
+    ${section("05", "AI Research — Fundamental · Technical · Sentiment")}
+    <div class="lx-aipanel">
+      <label class="lx-check"><input type="checkbox" id="srch">
+        <span>Search the web for verified event data (slower, costs more per report)</span></label>
+      <button class="lx-btn primary" id="genbtn">Generate research →</button>
+    </div>
+    <div id="airesult"></div>`;
+
+  // range pills + chart
+  const rp = $("#rangepills");
+  Object.keys(RANGES).forEach((r) => {
+    const b = document.createElement("button");
+    b.className = "pill" + (r === state.range ? " on" : "");
+    b.textContent = r;
+    b.onclick = () => { state.range = r; route("Reports"); };
+    rp.appendChild(b);
+  });
+  drawChart(d, ym, dp);
+
+  // AI section
+  const genbtn = $("#genbtn"), srch = $("#srch"), out = $("#airesult");
+  if (state.pending[rk]) { genbtn.disabled = true; genbtn.innerHTML = "Researching…"; }
+  if (res) renderResearch(out, res, pair, ym);
+  else out.innerHTML = `<div class="lx-body" style="margin-top:14px;color:var(--text3);">
+    The generated report adds: macro drivers, an economic-event timeline, research views, risk factors and a
+    monthly outlook with bias &amp; confidence. Reports are cached for 24h.</div>`;
+  genbtn.onclick = async () => {
+    genbtn.disabled = true;
+    genbtn.innerHTML = '<span class="lx-spin"></span>&nbsp; Researching…';
+    state.pending[rk] = true;
+    try {
+      const r = await fetch("/api/research", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pair: pair, month: ym, search: srch.checked }),
+      });
+      state.reports[rk] = await r.json();
+    } catch (e) { state.reports[rk] = { error: String(e) }; }
+    state.pending[rk] = false;
+    if (state.view === "Reports" && state.pair === pair && state.monthByPair[pair] === ym) route("Reports");
+  };
+}
+
+function summaryTable(months, dp) {
+  const body = months.slice(0, 6).map((r) =>
+    `<tr><td>${esc(monthLabel(r.ym))}</td><td>${fmt(r.open, dp)}</td><td>${fmt(r.close, dp)}</td>
+     <td>${chgChip(r.chgPct)}</td><td>${fmt(r.high, dp)}</td><td>${fmt(r.low, dp)}</td>
+     <td>USD ${esc(r.usdEnded)}</td></tr>`).join("");
+  return `<div class="lx-card flat" style="padding:8px 6px;"><table class="lx-table">
+    <thead><tr><th>Month</th><th>Open</th><th>Close</th><th>Change</th><th>High</th><th>Low</th><th>USD</th></tr></thead>
+    <tbody>${body}</tbody></table></div>`;
+}
+
+function techGrid(tech, row, dp) {
+  if (!tech) return `<div class="lx-body">Not enough history for indicators.</div>`;
+  const rsiPct = Math.max(0, Math.min(100, tech.rsi));
+  const maRows = [20, 50, 200].filter((n) => tech.smas[n]).map((n) =>
+    `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;">
+      <span style="color:var(--text2);">SMA ${n}</span>
+      <span style="font-variant-numeric:tabular-nums;">${fmt(tech.smas[n], dp)}
+      <span class="lx-chip ${tech.px > tech.smas[n] ? "pos" : "neg"}" style="margin-left:6px;">${tech.px > tech.smas[n] ? "above" : "below"}</span></span>
+    </div>`).join("");
+  const trendCls = tech.trend === "Uptrend" ? "pos" : tech.trend === "Downtrend" ? "neg" : "warn";
+  const macdCls = tech.macdHist > 0 ? "pos" : "neg";
+  const cards = [
+    ["Trend", `<span class="lx-chip ${trendCls}">${esc(tech.trend)}</span>`,
+      `3-month momentum ${tech.mom3 >= 0 ? "+" : ""}${tech.mom3.toFixed(2)}% · price ${fmt(tech.px, dp)}`],
+    ["RSI (14)", `${tech.rsi.toFixed(1)} <span class="lx-chip info" style="margin-left:8px;">${esc(tech.rsiState)}</span>`,
+      `<div class="lx-bar"><div class="lx-bar-fill" style="width:${rsiPct.toFixed(0)}%;"></div></div>`],
+    ["MACD (12·26·9)", `<span class="lx-chip ${macdCls}">${esc(tech.macdState)}</span>`,
+      `MACD ${tech.macd >= 0 ? "+" : ""}${tech.macd.toFixed(5)} · signal ${tech.macdSignal >= 0 ? "+" : ""}${tech.macdSignal.toFixed(5)}`],
+    ["Moving Averages", maRows, ""],
+    ["Market Structure", `<span style="font-size:15.5px;font-weight:600;">${esc(tech.structure)}</span>`,
+      "last three monthly swings"],
+    ["Monthly Range", `${fmt(row.low, dp)} — ${fmt(row.high, dp)}`,
+      `range width ${((row.high / row.low - 1) * 100).toFixed(2)}%`],
+  ];
+  return `<div class="lx-grid c3">` + cards.map(([lb, val, sub]) =>
+    `<div class="lx-card"><div class="lx-kpi-label">${lb}</div>
+     <div style="margin-top:10px;font-size:15px;">${val}</div>
+     <div class="lx-kpi-sub" style="margin-top:8px;">${sub}</div></div>`).join("") + `</div>`;
+}
+
+function levelsTable(tech, dp) {
+  const rows = tech.levels.map(([name, v]) => {
+    const dist = (v / tech.px - 1) * 100;
+    const kind = v > tech.px ? ["info", "resistance"] : ["warn", "support"];
+    return `<tr><td>${esc(name)}</td><td><span class="lx-chip ${kind[0]}">${kind[1]}</span></td>
+      <td>${fmt(v, dp)}</td><td>${chgChip(dist, " from close")}</td></tr>`;
+  }).join("");
+  return `<div class="lx-card flat" style="padding:8px 6px;"><table class="lx-table">
+    <thead><tr><th>Level</th><th>Type</th><th>Price</th><th>Distance</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+/* ---- chart ---- */
+const bandPlugin = {
+  id: "monthband",
+  beforeDatasetsDraw(chart, args, opts) {
+    if (opts.from == null || opts.to == null) return;
+    const x = chart.scales.x, area = chart.chartArea;
+    const x0 = x.getPixelForValue(Math.max(0, opts.from));
+    const x1 = x.getPixelForValue(opts.to);
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.fillStyle = "rgba(37,99,235,0.08)";
+    ctx.fillRect(x0, area.top, x1 - x0, area.bottom - area.top);
+    ctx.restore();
+  },
+};
+
+function drawChart(d, ym, dp) {
+  const n = Math.min(RANGES[state.range], d.candles.t.length);
+  const start = d.candles.t.length - n;
+  const t = d.candles.t.slice(start);
+  const c = d.candles.c.slice(start);
+  const s20 = d.sma20.slice(start);
+  const s50 = d.sma50.slice(start);
+  const labels = t.map((x) => new Date(x * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" }));
+  let from = null, to = null;
+  t.forEach((x, i) => {
+    const k = new Date(x * 1000);
+    const key = k.getUTCFullYear() + "-" + String(k.getUTCMonth() + 1).padStart(2, "0");
+    if (key === ym) { if (from == null) from = i; to = i; }
+  });
+  if (state.chart) { state.chart.destroy(); state.chart = null; }
+  const grid = "rgba(128,128,140,0.12)", tick = "#8a8a93";
+  state.chart = new Chart($("#pricechart"), {
+    type: "line",
+    data: { labels: labels, datasets: [
+      { label: "SMA 20", data: s20, borderColor: "rgba(161,161,170,0.75)", borderWidth: 1,
+        borderDash: [3, 4], pointRadius: 0, fill: false, tension: 0 },
+      { label: "SMA 50", data: s50, borderColor: "rgba(245,158,11,0.55)", borderWidth: 1,
+        borderDash: [3, 4], pointRadius: 0, fill: false, tension: 0 },
+      { label: "Close", data: c, borderColor: "#3B82F6", borderWidth: 2.1, pointRadius: 0,
+        fill: false, tension: 0 },
+    ]},
+    plugins: [bandPlugin],
+    options: {
+      animation: { duration: 500 }, maintainAspectRatio: true, responsive: true,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        monthband: { from: from, to: to },
+        legend: { position: "top", align: "start",
+          labels: { color: tick, boxWidth: 18, boxHeight: 2, font: { family: "Inter", size: 11 } } },
+        tooltip: {
+          backgroundColor: "#16161a", borderColor: "rgba(255,255,255,0.13)", borderWidth: 1,
+          titleFont: { family: "Inter" }, bodyFont: { family: "Inter" }, padding: 10,
+          callbacks: { label: (i) => i.dataset.label + "  " + (i.parsed.y == null ? "–" : fmt(i.parsed.y, dp)) },
+        },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: tick, maxTicksLimit: 8, maxRotation: 0, font: { family: "Inter", size: 11 } } },
+        y: { position: "right", grid: { color: grid }, border: { display: false },
+          ticks: { color: tick, font: { family: "Inter", size: 11 }, callback: (v) => fmt(v, dp) } },
+      },
+    },
+  });
+}
+
+/* ---- AI research render ---- */
+function renderResearch(out, res, pair, ym) {
+  if (res.error === "no_key") {
+    out.innerHTML = `<div class="lx-card flat" style="margin-top:14px;"><div class="lx-body">
+      AI research is not connected yet — add your <b>ANTHROPIC_API_KEY</b> in the Cloudflare worker settings
+      (Settings → Variables &amp; Secrets), then try again.</div></div>`;
+    return;
+  }
+  if (res.error === "disabled") {
+    out.innerHTML = `<div class="lx-body" style="margin-top:14px;">AI research is currently disabled.</div>`;
+    return;
+  }
+  if (res.error) {
+    out.innerHTML = `<div class="lx-card flat" style="margin-top:14px;"><span class="lx-chip warn">error</span>
+      <div class="lx-body" style="margin-top:8px;">${esc(res.error)}</div></div>`;
+    return;
+  }
+  const rep = res.report;
+  if (!rep) {
+    out.innerHTML = `<div class="lx-card flat" style="margin-top:14px;"><span class="lx-chip warn">parse</span>
+      <div class="lx-body" style="margin-top:8px;">The model reply could not be parsed — raw output below.
+      Click Generate research to retry.</div>
+      <pre style="white-space:pre-wrap;font-size:12px;color:var(--text2);">${esc((res.raw || "").slice(0, 4000))}</pre></div>`;
+    return;
+  }
+  let n = 6, html = "";
+  const drivers = rep.macro_drivers || [];
+  if (drivers.length) {
+    html += section(String(n++).padStart(2, "0"), "Macro Drivers") + `<div class="lx-grid c2">` +
+      drivers.map((dr) => `<div class="lx-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          <div style="font-size:14.5px;font-weight:650;">${FLAGS[String(dr.country_code || "GL").toUpperCase()] || "🌐"}&nbsp; ${esc(dr.title)}</div>
+          ${impactChip(dr.impact)}</div>
+        <div class="lx-body" style="margin-top:9px;">${esc(dr.analysis)}</div></div>`).join("") + `</div>`;
+  }
+  const events = rep.key_events || [];
+  if (events.length) {
+    html += section(String(n++).padStart(2, "0"), "Economic Calendar") + `<div class="lx-card flat"><div class="lx-tl">` +
+      events.map((e) => {
+        const vals = [["Actual", e.actual], ["Forecast", e.forecast], ["Previous", e.previous]]
+          .filter(([, x]) => x !== "" && x != null).map(([k, x]) => k + " <b>" + esc(String(x)) + "</b>");
+        return `<div class="lx-tl-item">
+          <div class="lx-tl-date">${esc(e.date)}</div>
+          <div class="lx-tl-head">${FLAGS[String(e.country_code || "GL").toUpperCase()] || "🌐"}&nbsp; ${esc(e.event)} &nbsp;${impactChip(e.impact)}</div>
+          ${vals.length ? `<div class="lx-tl-afp">${vals.join(" &nbsp;·&nbsp; ")}</div>` : ""}
+          <div class="lx-tl-body">${esc(e.analysis)}</div></div>`;
+      }).join("") + `</div></div>`;
+  }
+  const views = [["Fundamental", rep.fundamental_view], ["Technical", rep.technical_view],
+    ["Sentiment", rep.sentiment_view]].filter(([, tx]) => tx);
+  if (views.length) {
+    html += section(String(n++).padStart(2, "0"), "Research Views") + `<div class="lx-grid c3">` +
+      views.map(([lb, tx]) => `<div class="lx-card">
+        <div class="lx-kpi-label" style="color:var(--accent2);">${lb}</div>
+        <div class="lx-body" style="margin-top:9px;color:var(--text);">${esc(tx)}</div></div>`).join("") + `</div>`;
+  }
+  const risks = rep.risk_factors || [];
+  if (risks.length) {
+    html += section(String(n++).padStart(2, "0"), "Risk Factors") +
+      risks.map((r) => `<div class="lx-risk ${esc(String(r.severity || "medium").toLowerCase())}">
+        <div class="lx-risk-title">${esc(r.title)} ${impactChip(r.severity)}</div>
+        <div class="lx-risk-body">${esc(r.detail)}</div></div>`).join("");
+  }
+  const o = rep.outlook || {};
+  if (o.bias || o.narrative) {
+    const bias = String(o.bias || "Neutral");
+    const biasCls = { Bullish: "pos", Bearish: "neg" }[bias] || "muted";
+    let conf = parseInt(o.confidence, 10); if (isNaN(conf)) conf = 0;
+    conf = Math.max(0, Math.min(100, conf));
+    const dot = '<span style="color:var(--accent2);">●</span>&nbsp; ';
+    const list = (arr) => (arr || []).map((x) =>
+      `<div class="lx-body" style="padding:3px 0;">${dot}${esc(x)}</div>`).join("");
+    html += section(String(n++).padStart(2, "0"), "Monthly Outlook") + `<div class="lx-outlook">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;">
+        <div><div class="lx-mini-label">Overall bias — next month</div>
+          <div style="font-size:30px;font-weight:750;letter-spacing:-.02em;margin-top:6px;">${esc(bias)}
+          <span class="lx-chip ${biasCls}" style="vertical-align:middle;margin-left:8px;">${esc(pair)}</span></div></div>
+        <div style="min-width:230px;"><div class="lx-mini-label">Confidence &nbsp;·&nbsp; ${conf}/100</div>
+          <div class="lx-bar"><div class="lx-bar-fill" style="width:${conf}%;"></div></div></div>
+      </div>
+      <div class="lx-body" style="margin-top:18px;color:var(--text);font-size:14px;">${esc(o.narrative)}</div>
+      <div class="lx-grid c2" style="margin-top:20px;">
+        <div><div class="lx-mini-label" style="margin-bottom:8px;">Key drivers</div>${list(o.key_drivers)}</div>
+        <div><div class="lx-mini-label" style="margin-bottom:8px;">Next month's risks</div>${list(o.next_month_risks)}</div>
+      </div></div>`;
+  }
+  const sources = res.sources || [];
+  if (sources.length) {
+    html += section(String(n++).padStart(2, "0"), "References") + `<div class="lx-card flat">` +
+      sources.map(([t, u]) => `<div style="padding:6px 0;">
+        <a class="lx-src" href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a></div>`).join("") + `</div>`;
+  }
+  html += `<div class="lx-body" style="margin-top:14px;color:var(--text3);font-size:12px;">
+    AI-generated research · verify key figures before relying on them. Reports are cached for 24h.</div>`;
+  out.innerHTML = html;
+}
+
+/* ============================ boot ====================================== */
+(function boot() {
+  if (localStorage.getItem("fx-light") === "1") document.documentElement.classList.add("light");
+  $("#lighttoggle").onclick = () => {
+    const on = document.documentElement.classList.toggle("light");
+    localStorage.setItem("fx-light", on ? "1" : "0");
+    if (state.view === "Reports") route("Reports"); // re-theme chart
+  };
+  const np = $("#navpills");
+  VIEWS.forEach((vn) => {
+    const b = document.createElement("button");
+    b.className = "pill";
+    b.dataset.v = vn;
+    b.textContent = vn;
+    b.onclick = () => route(vn);
+    np.appendChild(b);
+  });
+  route("Reports");
+})();
+</script>
+</body>
+</html>
