@@ -176,9 +176,61 @@ a.lx-src:hover { text-decoration:underline; }
   display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
 .lx-loading { color:var(--text3); font-size:13.5px; padding:26px 4px; }
 .lx-dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:9px; flex:none; }
+
+/* ---------- intro animation ---------- */
+#intro { position:fixed; inset:0; z-index:999; background:var(--bg); display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:16px; transition:opacity .65s ease, visibility .65s; }
+#intro.gone { opacity:0; visibility:hidden; pointer-events:none; }
+.intro-mark { width:36px; height:36px; border-radius:10px; background:var(--accent);
+  box-shadow:0 0 46px rgba(37,99,235,.65); animation:introMark .9s cubic-bezier(.2,.7,.3,1.35) both; }
+@keyframes introMark { 0% { opacity:0; transform:scale(.35) rotate(-10deg); }
+  60% { opacity:1; transform:scale(1.1); } 100% { transform:scale(1) rotate(0); } }
+.intro-name { font-size:23px; font-weight:750; letter-spacing:-.02em; animation:lxfade .7s .3s both; }
+.intro-tag { font-size:11px; letter-spacing:.24em; text-transform:uppercase; color:var(--text3);
+  animation:lxfade .7s .55s both; }
+
+/* ---------- author ---------- */
+.lx-avatar { width:64px; height:64px; border-radius:50%; flex:none; display:flex; align-items:center;
+  justify-content:center; font-size:21px; font-weight:750; letter-spacing:.02em; color:#fff;
+  background:linear-gradient(135deg, var(--accent), #7C3AED); box-shadow:0 0 30px rgba(37,99,235,.35); }
+
+/* ---------- horizontal table scroll ---------- */
+.lx-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.lx-scroll .lx-table { min-width:560px; }
+
+/* ---------- mobile ---------- */
+@media (max-width:680px) {
+  .wrap { padding:10px 12px 60px; }
+  .lx-nav { flex-wrap:wrap; gap:8px 10px; padding:9px 12px; top:8px; }
+  .lx-logo-tag { display:none; }
+  .lx-light { margin-left:auto; }
+  .lx-light > span:last-child { display:none; }
+  .lx-navpills { order:3; flex:1 1 100%; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; }
+  .lx-navpills::-webkit-scrollbar { display:none; }
+  .lx-pills { flex-wrap:nowrap; overflow-x:auto; width:100%; scrollbar-width:none; padding-bottom:2px; }
+  .lx-pills::-webkit-scrollbar { display:none; }
+  .pill { flex:none; padding:5px 12px; }
+  .lx-toolbar { gap:8px; }
+  .lx-toolbar select.lx-select { width:100%; }
+  .lx-hero { padding:26px 0 6px; }
+  .lx-hero-title { font-size:26px; }
+  .lx-hero-sub { font-size:14.5px; }
+  .lx-kpi-value { font-size:23px; }
+  .lx-card { padding:15px 15px; }
+  .lx-outlook { padding:20px 17px; }
+  .lx-sec { margin:28px 0 12px; }
+  .lx-sec-title { font-size:18px; }
+  .lx-tl { margin-left:4px; padding-left:24px; }
+  .lx-tl-item::before { left:-28.5px; }
+}
 </style>
 </head>
 <body>
+<div id="intro">
+  <div class="intro-mark"></div>
+  <div class="intro-name">ForexAnalyst</div>
+  <div class="intro-tag">Monthly FX Research</div>
+</div>
 <div class="wrap">
   <nav class="lx-nav">
     <div class="lx-logo">
@@ -192,6 +244,7 @@ a.lx-src:hover { text-decoration:underline; }
   <main id="view"></main>
   <footer class="lx-footer">
     ForexAnalyst — forexanalyst.org · Prices: Yahoo Finance · News: Finnhub · Macro: FRED · Analysis: Claude (Anthropic)<br>
+    Built by <a class="lx-src" href="https://jeffersonem.com" target="_blank" rel="noopener">Jefferson Evans</a> ·
     For research and educational purposes only. Not investment advice.
   </footer>
 </div>
@@ -209,7 +262,7 @@ const PAIRS = {
 };
 const FLAGS = { US:"🇺🇸", EU:"🇪🇺", EZ:"🇪🇺", GB:"🇬🇧", UK:"🇬🇧", AU:"🇦🇺", NZ:"🇳🇿",
   ID:"🇮🇩", JP:"🇯🇵", CN:"🇨🇳", CA:"🇨🇦", CH:"🇨🇭", DE:"🇩🇪", FR:"🇫🇷", GL:"🌐" };
-const VIEWS = ["Reports", "Dashboard", "Archive", "News", "About"];
+const VIEWS = ["Reports", "Dashboard", "Archive", "News", "About", "Author"];
 const RANGES = { "3M":63, "6M":126, "1Y":252, "2Y":9999 };
 
 const state = {
@@ -278,7 +331,7 @@ function route(view) {
   const v = $("#view");
   v.innerHTML = "";
   ({ Reports: renderReports, Dashboard: renderDashboard, Archive: renderArchive,
-     News: renderNews, About: renderAbout }[view] || renderReports)(v);
+     News: renderNews, About: renderAbout, Author: renderAuthor }[view] || renderReports)(v);
   window.scrollTo({ top: 0 });
 }
 
@@ -606,9 +659,9 @@ function summaryTable(months, dp) {
     `<tr><td>${esc(monthLabel(r.ym))}</td><td>${fmt(r.open, dp)}</td><td>${fmt(r.close, dp)}</td>
      <td>${chgChip(r.chgPct)}</td><td>${fmt(r.high, dp)}</td><td>${fmt(r.low, dp)}</td>
      <td>USD ${esc(r.usdEnded)}</td></tr>`).join("");
-  return `<div class="lx-card flat" style="padding:8px 6px;"><table class="lx-table">
+  return `<div class="lx-card flat" style="padding:8px 6px;"><div class="lx-scroll"><table class="lx-table">
     <thead><tr><th>Month</th><th>Open</th><th>Close</th><th>Change</th><th>High</th><th>Low</th><th>USD</th></tr></thead>
-    <tbody>${body}</tbody></table></div>`;
+    <tbody>${body}</tbody></table></div></div>`;
 }
 
 function techGrid(tech, row, dp) {
@@ -648,9 +701,9 @@ function levelsTable(tech, dp) {
     return `<tr><td>${esc(name)}</td><td><span class="lx-chip ${kind[0]}">${kind[1]}</span></td>
       <td>${fmt(v, dp)}</td><td>${chgChip(dist, " from close")}</td></tr>`;
   }).join("");
-  return `<div class="lx-card flat" style="padding:8px 6px;"><table class="lx-table">
+  return `<div class="lx-card flat" style="padding:8px 6px;"><div class="lx-scroll"><table class="lx-table">
     <thead><tr><th>Level</th><th>Type</th><th>Price</th><th>Distance</th></tr></thead>
-    <tbody>${rows}</tbody></table></div>`;
+    <tbody>${rows}</tbody></table></div></div>`;
 }
 
 /* ---- chart ---- */
@@ -817,8 +870,57 @@ function renderResearch(out, res, pair, ym) {
   out.innerHTML = html;
 }
 
+/* ============================ author ==================================== */
+function renderAuthor(v) {
+  v.innerHTML = `<div class="lx-hero lx-fade" style="padding-bottom:4px;">
+    <div class="lx-hero-month">About the Author</div>
+    <div class="lx-hero-title" style="font-size:34px;">Behind ForexAnalyst</div>
+    <div class="lx-hero-sub">The research platform, data pipeline and this interface are designed,
+    engineered and maintained end-to-end as part of an ongoing engineering portfolio.</div></div>
+
+    <div class="lx-card" style="margin-top:10px;">
+      <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;">
+        <div class="lx-avatar">JE</div>
+        <div style="flex:1;min-width:220px;">
+          <div style="font-size:17px;font-weight:700;">Jefferson Evans</div>
+          <div class="lx-body" style="margin-top:4px;">Builder of ForexAnalyst — from the market-data and
+          analytics engine to the monthly research publishing workflow and the design system you're reading now.</div>
+        </div>
+        <a class="lx-btn primary" style="text-decoration:none;display:inline-block;"
+           href="https://jeffersonem.com" target="_blank" rel="noopener">More about me →</a>
+      </div>
+    </div>
+
+    ${section("01", "What Powers This Site")}
+    <div class="lx-grid c3">
+      <div class="lx-card"><div class="lx-kpi-label" style="color:var(--accent2);">Edge platform</div>
+        <div class="lx-body" style="margin-top:9px;">Runs entirely on Cloudflare Workers with KV storage —
+        serverless, globally distributed, and fast from anywhere.</div></div>
+      <div class="lx-card"><div class="lx-kpi-label" style="color:var(--accent2);">Analytics engine</div>
+        <div class="lx-body" style="margin-top:9px;">Daily OHLC ingestion, monthly aggregation, RSI / MACD /
+        moving averages, market structure and pivot levels — computed server-side on request.</div></div>
+      <div class="lx-card"><div class="lx-kpi-label" style="color:var(--accent2);">AI research desk</div>
+        <div class="lx-body" style="margin-top:9px;">Monthly notes are researched and written by Claude with
+        web-verified event data, then reviewed and published as permanent editions.</div></div>
+    </div>
+
+    ${section("02", "Portfolio")}
+    <div class="lx-card flat"><div class="lx-body">More projects, engineering write-ups and contact details
+    live on my portfolio site: <a class="lx-src" href="https://jeffersonem.com" target="_blank"
+    rel="noopener">jeffersonem.com</a></div></div>`;
+}
+
 /* ============================ boot ====================================== */
 (function boot() {
+  // intro animation: play once per browser session
+  const intro = document.getElementById("intro");
+  if (sessionStorage.getItem("fx-intro") === "1") {
+    intro.remove();
+  } else {
+    sessionStorage.setItem("fx-intro", "1");
+    setTimeout(() => intro.classList.add("gone"), 1500);
+    setTimeout(() => intro.remove(), 2300);
+  }
   if (localStorage.getItem("fx-light") === "1") document.documentElement.classList.add("light");
   $("#lighttoggle").onclick = () => {
     const on = document.documentElement.classList.toggle("light");
