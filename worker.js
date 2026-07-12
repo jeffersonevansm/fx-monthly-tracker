@@ -420,8 +420,54 @@ function monthLabel(ym) {
   return names[parseInt(ym.slice(5), 10) - 1] + " " + ym.slice(0, 4);
 }
 
-async function routeResearch(request, env, ctx) {
-  if (env.RESEARCH_DISABLED === "1") return json({ error: "disabled" }, 403);
+// ---- published research notes (KV) ----
+
+async function routeGetResearch(url, env) {
+  const pair = url.searchParams.get("pair");
+  const ym = url.searchParams.get("month");
+  if (!PAIRS[pair] || !/^\d{4}-(0[1-9]|1[0-2])$/.test(ym || "")) return json({ error: "bad_request" }, 400);
+  if (!env.REPORTS) return json({ error: "no_store" });
+  const v = await env.REPORTS.get(pair + "|" + ym);
+  if (!v) return json({ error: "not_published" }, 404);
+  return new Response(v, { headers: {
+    "content-type": "application/json; charset=utf-8", "cache-control": "s-maxage=3600" } });
+}
+
+async function routePublished(env) {
+  if (!env.REPORTS) return json({ keys: [] });
+  const list = await env.REPORTS.list({ limit: 1000 });
+  return json({ keys: list.keys.map((k) => k.name) }, 200, 600);
+}
+
+/** One-time migration: copy the 36 generated reports from the edge cache
+ *  into KV. Idempotent and harmless; remove after the migration run. */
+async function routePublishFromCache(env) {
+  if (!env.REPORTS) return json({ error: "no_store" });
+  const cache = caches.default;
+  const months = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"];
+  const stored = [], missing = [];
+  for (const pair of Object.keys(PAIRS)) {
+    for (const ym of months) {
+      const key = pair + "|" + ym;
+      if (await env.REPORTS.get(key)) { stored.push(key); continue; }
+      const hit = await cache.match(new Request(
+        CACHE_BASE + "/research/" + encodeURIComponent(pair) + "/" + ym + "/s1"));
+      if (!hit) { missing.push(key); continue; }
+      const j = await hit.json();
+      if (j && j.report && j.report.headline) {
+        await env.REPORTS.put(key, JSON.stringify({ report: j.report, sources: j.sources || [] }));
+        stored.push(key);
+      } else missing.push(key);
+    }
+  }
+  return json({ stored: stored.length, missing: missing });
+}
+
+async function routeResearch(request, env, ctx, url) {
+  // Generation is admin-only now: visitors read pre-published notes for free.
+  if (!env.ADMIN_TOKEN || url.searchParams.get("admin") !== env.ADMIN_TOKEN) {
+    return json({ error: "generation_disabled" }, 403);
+  }
   if (!env.ANTHROPIC_API_KEY) return json({ error: "no_key" });
   let body;
   try { body = await request.json(); } catch (e) { return json({ error: "bad_request" }, 400); }
@@ -517,7 +563,12 @@ async function routeResearch(request, env, ctx) {
   const report = extractJson(raw);
   const resp = json({ report: report, raw: raw.slice(0, 20000), sources: sources }, 200,
     report ? 86400 : undefined);
-  if (report) ctx.waitUntil(cache.put(new Request(CACHE_BASE + cacheKey), resp.clone()));
+  if (report) {
+    ctx.waitUntil(cache.put(new Request(CACHE_BASE + cacheKey), resp.clone()));
+    // successful admin generations are published permanently
+    if (env.REPORTS) ctx.waitUntil(env.REPORTS.put(pair + "|" + ym,
+      JSON.stringify({ report: report, sources: sources })));
+  }
   return resp;
 }
 
@@ -531,13 +582,16 @@ export default {
       if (p === "/api/pair") return await routePair(url, env, ctx);
       if (p === "/api/news") return await routeNews(url, env, ctx);
       if (p === "/api/macro") return await routeMacro(env, ctx);
-      if (p === "/api/research" && request.method === "POST") return await routeResearch(request, env, ctx);
+      if (p === "/api/research" && request.method === "GET") return await routeGetResearch(url, env);
+      if (p === "/api/research" && request.method === "POST") return await routeResearch(request, env, ctx, url);
+      if (p === "/api/published") return await routePublished(env);
+      if (p === "/api/publish-from-cache") return await routePublishFromCache(env);
       if (p === "/api/status") {
         return json({
           prices: true,
           news: !!env.FINNHUB_API_KEY,
           macro: !!env.FRED_API_KEY,
-          ai: !!env.ANTHROPIC_API_KEY && env.RESEARCH_DISABLED !== "1",
+          ai: !!env.REPORTS,
         });
       }
       if (p.startsWith("/api/")) return json({ error: "not_found" }, 404);

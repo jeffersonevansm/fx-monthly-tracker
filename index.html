@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FX Monthly Tracker — Monthly FX Research</title>
+<title>ForexAnalyst — Monthly FX Research</title>
 <meta name="description" content="Institutional-style monthly FX research: DXY, EUR/USD, GBP/USD, AUD/USD, NZD/USD, USD/IDR.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -183,7 +183,7 @@ a.lx-src:hover { text-decoration:underline; }
   <nav class="lx-nav">
     <div class="lx-logo">
       <span class="lx-logo-mark"></span>
-      <span class="lx-logo-name">FX Monthly Tracker</span>
+      <span class="lx-logo-name">ForexAnalyst</span>
       <span class="lx-logo-tag">Research</span>
     </div>
     <div class="lx-navpills" id="navpills"></div>
@@ -191,7 +191,7 @@ a.lx-src:hover { text-decoration:underline; }
   </nav>
   <main id="view"></main>
   <footer class="lx-footer">
-    FX Monthly Tracker — forexanalyst.org · Prices: Yahoo Finance · News: Finnhub · Macro: FRED · Analysis: Claude (Anthropic)<br>
+    ForexAnalyst — forexanalyst.org · Prices: Yahoo Finance · News: Finnhub · Macro: FRED · Analysis: Claude (Anthropic)<br>
     For research and educational purposes only. Not investment advice.
   </footer>
 </div>
@@ -392,8 +392,13 @@ async function renderArchive(v) {
   }
   if (state.view !== "Archive") return;
   const cfg = PAIRS[state.pair];
+  if (!state.published) {
+    try { state.published = new Set((await (await fetch("/api/published")).json()).keys); }
+    catch (e) { state.published = new Set(); }
+    if (state.view !== "Archive") return;
+  }
   holder.innerHTML = `<div style="height:14px;"></div><div class="lx-grid c3">` + d.months.map((r) => {
-    const done = state.reports[state.pair + "|" + r.ym];
+    const done = state.published.has(state.pair + "|" + r.ym);
     return `<div class="lx-card">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <div style="font-size:14.5px;font-weight:650;">${esc(monthLabel(r.ym))}</div>${chgChip(r.chgPct)}
@@ -401,7 +406,7 @@ async function renderArchive(v) {
       <div style="font-size:12px;color:var(--text2);margin-top:8px;font-variant-numeric:tabular-nums;">
         O ${fmt(r.open, cfg.dp)} &nbsp;·&nbsp; C ${fmt(r.close, cfg.dp)} &nbsp;·&nbsp; H ${fmt(r.high, cfg.dp)} &nbsp;·&nbsp; L ${fmt(r.low, cfg.dp)}
       </div>
-      <div style="margin-top:8px;">${done ? '<span class="lx-chip info">report ready</span>' : ""}</div>
+      <div style="margin-top:8px;">${done ? '<span class="lx-chip info">published</span>' : '<span class="lx-chip muted">price data only</span>'}</div>
       <div style="margin-top:10px;"><button class="lx-btn block" data-ym="${r.ym}">Read →</button></div>
     </div>`;
   }).join("") + `</div>`;
@@ -483,7 +488,7 @@ async function renderAbout(v) {
     ["Prices", "Yahoo Finance — daily OHLC", s.prices],
     ["News", "Finnhub free tier", s.news],
     ["US macro", "FRED (St. Louis Fed)", s.macro],
-    ["AI research", "Anthropic Claude (Haiku)", s.ai],
+    ["Research notes", "Pre-published monthly reviews (Claude)", s.ai],
   ];
   $("#srcgrid").innerHTML = rows.map(([lb, tx, ok]) =>
     `<div class="lx-card"><div style="display:flex;align-items:center;gap:9px;">
@@ -526,7 +531,15 @@ async function renderReports(v) {
   const row = d.months.find((m) => m.ym === ym) || d.months[0];
   const tech = d.tech[ym];
   const rk = pair + "|" + ym;
-  const res = state.reports[rk];
+  let res = state.reports[rk];
+  if (res === undefined) {
+    try {
+      const rr = await fetch("/api/research?pair=" + encodeURIComponent(pair) + "&month=" + ym);
+      res = rr.ok ? await rr.json() : null;
+    } catch (e) { res = null; }
+    state.reports[rk] = res;
+    if (state.view !== "Reports") return;
+  }
   const rep = res && res.report;
 
   // ---- hero + KPIs ----
@@ -538,7 +551,7 @@ async function renderReports(v) {
       row.usdEnded.charAt(0).toUpperCase() + row.usdEnded.slice(1);
   }
   const summaryTxt = (rep && rep.executive_summary) ||
-    "Generate the AI research below to produce this month's executive summary — a fundamental, technical and sentiment deep-dive written by Claude from live price, macro and news data.";
+    "The " + monthLabel(ym) + " research note has not been published yet. Monthly reviews — fundamental, technical and sentiment — are published shortly after each month ends.";
   const retColor = row.chgPct > 0 ? "var(--pos)" : row.chgPct < 0 ? "var(--neg)" : "var(--text)";
   holder.innerHTML = `
     <div class="lx-hero lx-fade">
@@ -563,12 +576,7 @@ async function renderReports(v) {
     ${section("03", "Technical Analysis")}
     ${techGrid(tech, row, dp)}
     ${tech ? section("04", "Support & Resistance") + levelsTable(tech, dp) : ""}
-    ${section("05", "AI Research — Fundamental · Technical · Sentiment")}
-    <div class="lx-aipanel">
-      <label class="lx-check"><input type="checkbox" id="srch">
-        <span>Search the web for verified event data (slower, costs more per report)</span></label>
-      <button class="lx-btn primary" id="genbtn">Generate research →</button>
-    </div>
+    ${section("05", "Monthly Research Note")}
     <div id="airesult"></div>`;
 
   // range pills + chart
@@ -582,27 +590,15 @@ async function renderReports(v) {
   });
   drawChart(d, ym, dp);
 
-  // AI section
-  const genbtn = $("#genbtn"), srch = $("#srch"), out = $("#airesult");
-  if (state.pending[rk]) { genbtn.disabled = true; genbtn.innerHTML = "Researching…"; }
-  if (res) renderResearch(out, res, pair, ym);
-  else out.innerHTML = `<div class="lx-body" style="margin-top:14px;color:var(--text3);">
-    The generated report adds: macro drivers, an economic-event timeline, research views, risk factors and a
-    monthly outlook with bias &amp; confidence. Reports are cached for 24h.</div>`;
-  genbtn.onclick = async () => {
-    genbtn.disabled = true;
-    genbtn.innerHTML = '<span class="lx-spin"></span>&nbsp; Researching…';
-    state.pending[rk] = true;
-    try {
-      const r = await fetch("/api/research", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ pair: pair, month: ym, search: srch.checked }),
-      });
-      state.reports[rk] = await r.json();
-    } catch (e) { state.reports[rk] = { error: String(e) }; }
-    state.pending[rk] = false;
-    if (state.view === "Reports" && state.pair === pair && state.monthByPair[pair] === ym) route("Reports");
-  };
+  // published research note (read-only, no generation)
+  const out = $("#airesult");
+  if (rep) renderResearch(out, res, pair, ym);
+  else out.innerHTML = `<div class="lx-card flat" style="margin-top:4px;">
+    <span class="lx-chip muted">upcoming</span>
+    <div class="lx-news-head" style="margin-top:10px;">Not yet published</div>
+    <div class="lx-body" style="margin-top:6px;">The ${esc(monthLabel(ym))} research note — macro drivers,
+    economic-event timeline, fundamental / technical / sentiment views and the monthly outlook — is published
+    shortly after the month ends. Browse the <b>Archive</b> for published editions.</div></div>`;
 }
 
 function summaryTable(months, dp) {
@@ -747,7 +743,9 @@ function renderResearch(out, res, pair, ym) {
       <pre style="white-space:pre-wrap;font-size:12px;color:var(--text2);">${esc((res.raw || "").slice(0, 4000))}</pre></div>`;
     return;
   }
-  let n = 6, html = "";
+  let n = 6;
+  let html = `<div class="lx-meta" style="margin-top:2px;">FX Research Desk &nbsp;·&nbsp; Published monthly review
+    &nbsp;·&nbsp; ${esc(monthLabel(ym))} &nbsp;·&nbsp; ${esc(pair)}</div>`;
   const drivers = rep.macro_drivers || [];
   if (drivers.length) {
     html += section(String(n++).padStart(2, "0"), "Macro Drivers") + `<div class="lx-grid c2">` +

@@ -9,3 +9,7 @@ workers_dev = true
 type = "Text"
 globs = ["**/*.html"]
 fallthrough = true
+
+[[kv_namespaces]]
+binding = "REPORTS"
+id = "29c404c528b947359295c4a0735b6018"
