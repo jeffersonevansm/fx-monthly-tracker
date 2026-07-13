@@ -194,6 +194,33 @@ a.lx-src:hover { text-decoration:underline; }
   justify-content:center; font-size:21px; font-weight:750; letter-spacing:.02em; color:#fff;
   background:linear-gradient(135deg, var(--accent), #7C3AED); box-shadow:0 0 30px rgba(37,99,235,.35); }
 
+/* ---------- landing animations ---------- */
+html, body { overflow-x:hidden; }
+.lx-glow { position:absolute; width:520px; height:520px; border-radius:50%; filter:blur(90px);
+  background:radial-gradient(circle, rgba(37,99,235,.20), transparent 65%); top:-160px; right:-60px;
+  pointer-events:none; animation:lxfloat 9s ease-in-out infinite alternate; }
+@keyframes lxfloat { from { transform:translateY(0) scale(1); } to { transform:translateY(34px) scale(1.12); } }
+.lx-hero-wrap { position:relative; }
+.lx-cta { display:flex; gap:10px; flex-wrap:wrap; margin-top:22px; }
+.lx-ticker { overflow:hidden; border:1px solid var(--border); border-radius:12px; background:var(--card);
+  margin-top:26px; }
+.lx-ticker-track { display:flex; width:max-content; animation:lxmarq 38s linear infinite; }
+.lx-ticker:hover .lx-ticker-track { animation-play-state:paused; }
+.lx-tick { display:flex; align-items:center; gap:9px; padding:10px 20px; border-right:1px solid var(--border);
+  cursor:pointer; white-space:nowrap; font-size:13px; font-variant-numeric:tabular-nums; transition:background .15s; }
+.lx-tick:hover { background:var(--hover); }
+@keyframes lxmarq { from { transform:translateX(0); } to { transform:translateX(-50%); } }
+.lx-spark polyline { stroke-dasharray:1; stroke-dashoffset:1; animation:lxdash 1.1s .25s ease forwards; }
+@keyframes lxdash { to { stroke-dashoffset:0; } }
+.lx-clickcard { cursor:pointer; }
+.lx-live { display:inline-flex; align-items:center; background:var(--card); border:1px solid var(--border);
+  border-radius:99px; padding:7px 15px; font-size:13px; margin-top:16px; font-variant-numeric:tabular-nums; }
+.lx-pulse { width:8px; height:8px; border-radius:50%; background:var(--pos); display:inline-block;
+  position:relative; margin-right:9px; flex:none; }
+.lx-pulse::after { content:""; position:absolute; inset:-4px; border-radius:50%; border:1px solid var(--pos);
+  animation:lxping 1.8s ease-out infinite; }
+@keyframes lxping { 0% { transform:scale(.5); opacity:.9; } 100% { transform:scale(1.7); opacity:0; } }
+
 /* ---------- account ---------- */
 .lx-account { position:relative; }
 .lx-avatar-btn { width:30px; height:30px; border-radius:50%; overflow:hidden; border:1px solid var(--border2);
@@ -237,6 +264,10 @@ a.lx-src:hover { text-decoration:underline; }
   .lx-sec-title { font-size:18px; }
   .lx-tl { margin-left:4px; padding-left:24px; }
   .lx-tl-item::before { left:-28.5px; }
+  /* account dropdown: full-width sheet so it never clips off-screen */
+  .lx-menu { position:fixed; left:12px; right:12px; top:64px; min-width:0; }
+  .lx-glow { width:300px; height:300px; right:-120px; top:-100px; }
+  .lx-hero-title { max-width:100%; }
 }
 </style>
 </head>
@@ -278,7 +309,7 @@ const PAIRS = {
 };
 const FLAGS = { US:"🇺🇸", EU:"🇪🇺", EZ:"🇪🇺", GB:"🇬🇧", UK:"🇬🇧", AU:"🇦🇺", NZ:"🇳🇿",
   ID:"🇮🇩", JP:"🇯🇵", CN:"🇨🇳", CA:"🇨🇦", CH:"🇨🇭", DE:"🇩🇪", FR:"🇫🇷", GL:"🌐" };
-const VIEWS = ["Reports", "Dashboard", "Archive", "News", "About", "Author"];
+const VIEWS = ["Dashboard", "Reports", "Archive", "News", "About", "Author"];
 const RANGES = { "3M":63, "6M":126, "1Y":252, "2Y":9999 };
 
 const state = {
@@ -317,9 +348,9 @@ function sparklineSvg(closes, color) {
   const pts = closes.map((v, i) =>
     (i / (closes.length - 1) * w).toFixed(1) + "," + (h - 4 - (v - lo) / rng * (h - 8)).toFixed(1));
   const line = pts.join(" ");
-  return `<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">` +
+  return `<svg class="lx-spark" width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">` +
     `<polygon points="0,${h} ${line} ${w},${h}" fill="${color}" opacity="0.08"></polygon>` +
-    `<polyline points="${line}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"></polyline></svg>`;
+    `<polyline pathLength="1" points="${line}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"></polyline></svg>`;
 }
 
 /* ============================ data ====================================== */
@@ -379,11 +410,21 @@ function errorCard(v, msg, retry) {
 
 /* ============================ dashboard ================================= */
 async function renderDashboard(v) {
-  v.innerHTML = `<div class="lx-hero lx-fade" style="padding-bottom:4px;">
-    <div class="lx-hero-month">Dashboard</div>
-    <div class="lx-hero-title" style="font-size:34px;">Month-to-date across the board</div>
-    <div class="lx-hero-sub">Live monthly performance for all tracked pairs. Open any pair to read its full research report.</div>
-  </div>` + loading("Loading pairs…");
+  const pubCount = state.published ? state.published.size : 36;
+  v.innerHTML = `<div class="lx-hero-wrap"><div class="lx-glow"></div>
+    <div class="lx-hero lx-fade">
+      <div class="lx-hero-month">ForexAnalyst · Live Research Desk</div>
+      <div class="lx-hero-title">Six currencies. One monthly research desk.</div>
+      <div class="lx-hero-sub">Institutional-style FX research — price action, technicals, macro drivers and
+      a forward outlook for DXY, EUR/USD, GBP/USD, AUD/USD, NZD/USD and USD/IDR. Published monthly, free to read.</div>
+      <div class="lx-cta">
+        <button class="lx-btn primary" id="cta1">Read the latest research →</button>
+        <button class="lx-btn" id="cta2">Go Pro</button>
+      </div>
+    </div></div>` + loading("Loading live market data…");
+  $("#cta1").onclick = () => route("Reports");
+  $("#cta2").onclick = () => route("Upgrade");
+
   const results = await Promise.allSettled(Object.keys(PAIRS).map(fetchPair));
   if (state.view !== "Dashboard") return;
   const data = {};
@@ -393,12 +434,23 @@ async function renderDashboard(v) {
   v.querySelector(".lx-loading").remove();
   if (!Object.keys(data).length) return errorCard(v, "Could not load market prices", () => route("Dashboard"));
 
+  // scrolling ticker (two copies for a seamless loop)
+  const tickItems = Object.keys(data).map((p) => {
+    const d = data[p], cfg = PAIRS[p];
+    const last = d.candles.c[d.candles.c.length - 1];
+    const r = d.months[0];
+    return `<div class="lx-tick" data-open="${esc(p)}">${cfg.flag}
+      <b>${esc(p)}</b> <span>${fmt(last, cfg.dp)}</span> ${chgChip(r.chgPct)}</div>`;
+  }).join("");
+  v.insertAdjacentHTML("beforeend",
+    `<div class="lx-ticker lx-fade"><div class="lx-ticker-track">${tickItems}${tickItems}</div></div>`);
+
   const kpis = [];
   if (data["DXY"]) {
     const r = data["DXY"].months[0];
     const col = r.chgPct > 0 ? "var(--pos)" : "var(--neg)";
     kpis.push(["DXY — " + monthLabel(r.ym),
-      `<span style="color:${col};">${r.chgPct >= 0 ? "+" : ""}${r.chgPct.toFixed(2)}%</span>`,
+      `<span style="color:${col};" data-to="${r.chgPct}" data-dp="2" data-suf="%" data-signed="1"></span>`,
       "close " + fmt(r.close, 2)]);
   }
   const cur = {};
@@ -418,28 +470,48 @@ async function renderDashboard(v) {
     kpis.push(["Weakest vs USD", `<span style="color:var(--neg);">${esc(worst)}</span>`,
       (cur[worst] >= 0 ? "+" : "") + cur[worst].toFixed(2) + "% this month"]);
   }
-  const kpiHtml = `<div class="lx-grid c3">` + kpis.slice(0, 3).map(([lb, val, sub]) =>
+  const kpiHtml = `<div style="height:22px;"></div><div class="lx-grid c3">` + kpis.slice(0, 3).map(([lb, val, sub]) =>
     `<div class="lx-card"><div class="lx-kpi-label">${esc(lb)}</div>
      <div class="lx-kpi-value">${val}</div><div class="lx-kpi-sub">${esc(sub)}</div></div>`).join("") + `</div>`;
 
   const cards = Object.keys(data).map((p) => {
     const d = data[p], cfg = PAIRS[p], r = d.months[0];
+    const last = d.candles.c[d.candles.c.length - 1];
     const spark = sparklineSvg(d.candles.c.slice(-120), "#3B82F6");
-    return `<div class="lx-card">
+    return `<div class="lx-card lx-clickcard" data-open="${esc(p)}">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <div style="font-size:14px;font-weight:650;">${cfg.flag}&nbsp; ${esc(p)}</div>${chgChip(r.chgPct)}
       </div>
       <div style="font-size:11.5px;color:var(--text3);margin-top:2px;">${esc(cfg.name)}</div>
-      <div class="lx-kpi-value" style="font-size:25px;">${fmt(r.close, cfg.dp)}</div>
+      <div class="lx-kpi-value" style="font-size:25px;">${fmt(last, cfg.dp)}</div>
       <div style="margin:10px 0 6px;">${spark}</div>
       <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--text2);">
         <span>H ${fmt(r.high, cfg.dp)}</span><span>L ${fmt(r.low, cfg.dp)}</span><span>USD ${esc(r.usdEnded)}</span>
       </div>
-      <div style="margin-top:12px;"><button class="lx-btn block" data-open="${esc(p)}">Open report →</button></div>
+      <div style="margin-top:12px;"><button class="lx-btn block">Open report →</button></div>
     </div>`;
   }).join("");
-  v.insertAdjacentHTML("beforeend", kpiHtml + `<div style="height:14px;"></div><div class="lx-grid c3">${cards}</div>`);
-  v.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => { state.pair = b.dataset.open; route("Reports"); });
+  v.insertAdjacentHTML("beforeend",
+    kpiHtml + `<div style="height:14px;"></div><div class="lx-grid c3">${cards}</div>
+    <div class="lx-body lx-fade" style="margin-top:26px;color:var(--text3);text-align:center;">
+      ${pubCount} research editions published · updated monthly · free to read</div>`);
+  v.querySelectorAll("[data-open]").forEach((el) =>
+    el.onclick = () => { state.pair = el.dataset.open; route("Reports"); });
+  v.querySelectorAll("[data-to]").forEach(countUp);
+}
+
+function countUp(el) {
+  const to = parseFloat(el.dataset.to), dp = parseInt(el.dataset.dp || "2", 10);
+  const suf = el.dataset.suf || "", signed = el.dataset.signed === "1";
+  const t0 = performance.now();
+  const step = (t) => {
+    const p = Math.min(1, (t - t0) / 900);
+    const eased = 1 - Math.pow(1 - p, 3);
+    const val = to * eased;
+    el.textContent = (signed && val >= 0 ? "+" : "") + fmt(val, dp) + suf;
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
 /* ============================ archive =================================== */
@@ -635,11 +707,16 @@ async function renderReports(v) {
   const summaryTxt = (rep && rep.executive_summary) ||
     "The " + monthLabel(ym) + " research note has not been published yet. Monthly reviews — fundamental, technical and sentiment — are published shortly after each month ends.";
   const retColor = row.chgPct > 0 ? "var(--pos)" : row.chgPct < 0 ? "var(--neg)" : "var(--text)";
+  const lastPx = d.candles.c[d.candles.c.length - 1];
+  const lastDt = new Date(d.candles.t[d.candles.t.length - 1] * 1000)
+    .toLocaleDateString("en-US", { month: "short", day: "numeric" });
   holder.innerHTML = `
     <div class="lx-hero lx-fade">
       <div class="lx-hero-month">${cfg.flag}&nbsp; ${esc(pair)} — ${esc(monthLabel(ym))}</div>
       <div class="lx-hero-title">${esc(title)}</div>
       <div class="lx-hero-sub${rep ? "" : " placeholder"}">${esc(summaryTxt)}</div>
+      <div class="lx-live"><span class="lx-pulse"></span>Current rate&nbsp; <b>${fmt(lastPx, dp)}</b>
+        &nbsp;<span style="color:var(--text3);">· latest daily close (${esc(lastDt)})</span></div>
     </div>
     <div class="lx-grid c3">
       <div class="lx-card"><div class="lx-kpi-label">${esc(pair)} return</div>
@@ -1051,12 +1128,16 @@ function renderUpgrade(v) {
         <div class="lx-kpi-label" style="color:var(--accent2);">How to subscribe</div>
         <div class="lx-body" style="margin-top:10px;line-height:1.8;">
           1. Sign in with Google (top right).<br>
-          2. Transfer <b>Rp 200.000</b> — payment details will be announced here shortly.<br>
-          3. Send your payment proof and account email to the contact on the
-          <a class="lx-src" href="https://jeffersonem.com" target="_blank" rel="noopener">author page</a>.<br>
-          4. Your account is activated within 24 hours.</div>
+          2. Pay <b>Rp 200.000</b> via <b>BCA transfer</b> or <b>US$15</b> via <b>PayPal</b> —
+          account details are shown in the verification form.<br>
+          3. Submit your payment proof and account email through the form below.<br>
+          4. Your subscription is activated within 24 hours after verification.</div>
+        <div style="margin-top:16px;">
+          <a class="lx-btn primary" style="text-decoration:none;display:inline-block;"
+             href="https://forms.gle/qwSNUfwpmjKfgeQDA" target="_blank" rel="noopener">Submit payment proof →</a>
+        </div>
         <div class="lx-body" style="margin-top:12px;color:var(--text3);font-size:12px;">
-          Subscriptions are activated manually while automated payments are being set up.</div>
+          Payments are verified manually. Make sure the email in the form matches your sign-in email.</div>
       </div>
     </div>`;
 }
@@ -1170,7 +1251,7 @@ async function renderAdmin(v) {
     b.onclick = () => route(vn);
     np.appendChild(b);
   });
-  route(location.hash === "#admin" ? "Admin" : "Reports");
+  route(location.hash === "#admin" ? "Admin" : "Dashboard");
 })();
 </script>
 </body>
