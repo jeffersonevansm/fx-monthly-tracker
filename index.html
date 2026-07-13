@@ -46,7 +46,9 @@ a { color:var(--accent2); }
 .lx-nav { position:sticky; top:12px; z-index:99; display:flex; align-items:center; gap:14px;
   background:var(--navbg); backdrop-filter:blur(16px) saturate(1.4); -webkit-backdrop-filter:blur(16px) saturate(1.4);
   border:1px solid var(--border); border-radius:15px; padding:10px 18px; box-shadow:var(--shadow); }
-.lx-logo { display:flex; align-items:center; gap:10px; white-space:nowrap; margin-right:6px; }
+.lx-logo { display:flex; align-items:center; gap:10px; white-space:nowrap; margin-right:6px;
+  cursor:pointer; transition:opacity .15s ease; }
+.lx-logo:hover { opacity:.82; }
 .lx-logo-mark { width:12px; height:12px; border-radius:4px; background:var(--accent);
   box-shadow:0 0 14px rgba(37,99,235,.55); flex:none; }
 .lx-logo-name { font-size:14.5px; font-weight:700; letter-spacing:-.01em; }
@@ -291,7 +293,7 @@ html, body { overflow-x:hidden; }
   <main id="view"></main>
   <footer class="lx-footer">
     ForexAnalyst — forexanalyst.org · Prices: Yahoo Finance · News: Finnhub · Macro: FRED · Analysis: Claude (Anthropic)<br>
-    Built by <a class="lx-src" href="https://jeffersonem.com" target="_blank" rel="noopener">Jefferson Evans</a> ·
+    Built by <a class="lx-src" href="https://jeffersonem.com" target="_blank" rel="noopener">Jefferson Evans Manadi</a> ·
     For research and educational purposes only. Not investment advice.
   </footer>
 </div>
@@ -1037,9 +1039,9 @@ function renderAuthor(v) {
 
     <div class="lx-card" style="margin-top:10px;">
       <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;">
-        <div class="lx-avatar">JE</div>
+        <div class="lx-avatar">JM</div>
         <div style="flex:1;min-width:220px;">
-          <div style="font-size:17px;font-weight:700;">Jefferson Evans</div>
+          <div style="font-size:17px;font-weight:700;">Jefferson Evans Manadi</div>
           <div class="lx-body" style="margin-top:4px;">Builder of ForexAnalyst — from the market-data and
           analytics engine to the monthly research publishing workflow and the design system you're reading now.</div>
         </div>
@@ -1242,6 +1244,7 @@ async function renderAdmin(v) {
     localStorage.setItem("fx-light", on ? "1" : "0");
     if (state.view === "Reports") route("Reports"); // re-theme chart
   };
+  document.querySelector(".lx-logo").onclick = () => route("Dashboard");
   const np = $("#navpills");
   VIEWS.forEach((vn) => {
     const b = document.createElement("button");
