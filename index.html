@@ -194,6 +194,21 @@ a.lx-src:hover { text-decoration:underline; }
   justify-content:center; font-size:21px; font-weight:750; letter-spacing:.02em; color:#fff;
   background:linear-gradient(135deg, var(--accent), #7C3AED); box-shadow:0 0 30px rgba(37,99,235,.35); }
 
+/* ---------- account ---------- */
+.lx-account { position:relative; }
+.lx-avatar-btn { width:30px; height:30px; border-radius:50%; overflow:hidden; border:1px solid var(--border2);
+  cursor:pointer; background:var(--card); padding:0; flex:none; }
+.lx-avatar-btn img { width:100%; height:100%; object-fit:cover; display:block; }
+.lx-menu { position:absolute; right:0; top:40px; min-width:230px; background:var(--card);
+  border:1px solid var(--border2); border-radius:12px; box-shadow:var(--shadow); padding:8px; z-index:300; display:none; }
+.lx-menu.open { display:block; animation:lxfade .2s ease both; }
+.lx-menu-item { display:block; width:100%; text-align:left; background:none; border:none; color:var(--text);
+  font:500 13px 'Inter',sans-serif; padding:8px 10px; border-radius:8px; cursor:pointer; text-decoration:none; box-sizing:border-box; }
+.lx-menu-item:hover { background:var(--hover); }
+.lx-menu-head { padding:8px 10px; border-bottom:1px solid var(--border); margin-bottom:6px; }
+.lx-price { font-size:38px; font-weight:750; letter-spacing:-.02em; }
+.lx-err { color:var(--neg); font-size:12.5px; margin-top:8px; }
+
 /* ---------- horizontal table scroll ---------- */
 .lx-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
 .lx-scroll .lx-table { min-width:560px; }
@@ -239,6 +254,7 @@ a.lx-src:hover { text-decoration:underline; }
       <span class="lx-logo-tag">Research</span>
     </div>
     <div class="lx-navpills" id="navpills"></div>
+    <div class="lx-account" id="account"></div>
     <div class="lx-light" id="lighttoggle"><span class="lx-switch"></span><span>Light</span></div>
   </nav>
   <main id="view"></main>
@@ -331,7 +347,8 @@ function route(view) {
   const v = $("#view");
   v.innerHTML = "";
   ({ Reports: renderReports, Dashboard: renderDashboard, Archive: renderArchive,
-     News: renderNews, About: renderAbout, Author: renderAuthor }[view] || renderReports)(v);
+     News: renderNews, About: renderAbout, Author: renderAuthor,
+     Upgrade: renderUpgrade, Library: renderLibrary, Admin: renderAdmin }[view] || renderReports)(v);
   window.scrollTo({ top: 0 });
 }
 
@@ -593,6 +610,18 @@ async function renderReports(v) {
     state.reports[rk] = res;
     if (state.view !== "Reports") return;
   }
+  // Pro members: a personally generated edition takes precedence
+  state.myreps = state.myreps || {};
+  let mine = state.myreps[rk];
+  if (mine === undefined && state.me && state.me.signed_in) {
+    try {
+      const mr = await fetch("/api/myreport?pair=" + encodeURIComponent(pair) + "&month=" + ym);
+      mine = mr.ok ? await mr.json() : null;
+    } catch (e) { mine = null; }
+    state.myreps[rk] = mine;
+    if (state.view !== "Reports") return;
+  }
+  if (mine && mine.report) res = mine;
   const rep = res && res.report;
 
   // ---- hero + KPIs ----
@@ -630,6 +659,7 @@ async function renderReports(v) {
     ${techGrid(tech, row, dp)}
     ${tech ? section("04", "Support & Resistance") + levelsTable(tech, dp) : ""}
     ${section("05", "Monthly Research Note")}
+    <div id="fablebar" style="margin-bottom:14px;"></div>
     <div id="airesult"></div>`;
 
   // range pills + chart
@@ -643,7 +673,53 @@ async function renderReports(v) {
   });
   drawChart(d, ym, dp);
 
-  // published research note (read-only, no generation)
+  // Fable bar: on-demand generation for Pro members
+  const fb = $("#fablebar");
+  const me = state.me || { signed_in: false };
+  if (!me.signed_in) {
+    fb.innerHTML = `<div class="lx-aipanel"><div class="lx-body">Pro members can generate the latest
+      ${esc(pair)} research on demand with <b>Claude Fable</b> — including the current month, before publication.</div>
+      <button class="lx-btn" id="fbtn">Sign in →</button></div>`;
+    $("#fbtn").onclick = () => location.href = "/auth/login";
+  } else if (!me.sub_active) {
+    fb.innerHTML = `<div class="lx-aipanel"><div class="lx-body">Upgrade to Pro to generate fresh research
+      updates with <b>Claude Fable</b> — including the current month, before publication.</div>
+      <button class="lx-btn primary" id="fbtn">Upgrade · Rp 200k/mo →</button></div>`;
+    $("#fbtn").onclick = () => route("Upgrade");
+  } else {
+    fb.innerHTML = `<div class="lx-aipanel"><div class="lx-body">Generate the latest ${esc(pair)} ·
+      ${esc(monthLabel(ym))} edition with <b>Claude Fable</b>.
+      <span style="color:var(--text3);">&nbsp;${me.used}/${me.cap} used this month</span></div>
+      <button class="lx-btn primary" id="fbtn">Update with Fable →</button><div id="fberr" class="lx-err" style="width:100%;display:none;"></div></div>`;
+    $("#fbtn").onclick = async () => {
+      const b = $("#fbtn");
+      b.disabled = true;
+      b.innerHTML = '<span class="lx-spin"></span>&nbsp; Researching…';
+      let j;
+      try {
+        const r = await fetch("/api/generate", { method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ pair: pair, month: ym }) });
+        j = await r.json();
+      } catch (e) { j = { error: String(e) }; }
+      if (j.report) {
+        state.myreps[rk] = { report: j.report, sources: j.sources, model: "fable",
+          generated: new Date().toISOString() };
+        if (typeof j.used === "number") state.me.used = j.used;
+        if (state.view === "Reports") route("Reports");
+        return;
+      }
+      b.disabled = false;
+      b.textContent = "Update with Fable →";
+      const errEl = $("#fberr");
+      errEl.style.display = "block";
+      errEl.textContent = j.error === "cap_reached"
+        ? "You've reached your monthly generation cap (" + me.cap + ")."
+        : "Generation failed: " + (j.error || "unknown") + " — please try again.";
+    };
+  }
+
+  // research note (published or personal edition)
   const out = $("#airesult");
   if (rep) renderResearch(out, res, pair, ym);
   else out.innerHTML = `<div class="lx-card flat" style="margin-top:4px;">
@@ -797,8 +873,12 @@ function renderResearch(out, res, pair, ym) {
     return;
   }
   let n = 6;
-  let html = `<div class="lx-meta" style="margin-top:2px;">FX Research Desk &nbsp;·&nbsp; Published monthly review
-    &nbsp;·&nbsp; ${esc(monthLabel(ym))} &nbsp;·&nbsp; ${esc(pair)}</div>`;
+  const mineTag = res.model === "fable"
+    ? ` &nbsp;·&nbsp; <span class="lx-chip info">Your edition · Fable · ${esc(String(res.generated || "").slice(0, 10))}</span>`
+    : "";
+  let html = `<div class="lx-meta" style="margin-top:2px;">FX Research Desk &nbsp;·&nbsp;
+    ${res.model === "fable" ? "On-demand research update" : "Published monthly review"}
+    &nbsp;·&nbsp; ${esc(monthLabel(ym))} &nbsp;·&nbsp; ${esc(pair)}${mineTag}</div>`;
   const drivers = rep.macro_drivers || [];
   if (drivers.length) {
     html += section(String(n++).padStart(2, "0"), "Macro Drivers") + `<div class="lx-grid c2">` +
@@ -910,8 +990,159 @@ function renderAuthor(v) {
     rel="noopener">jeffersonem.com</a></div></div>`;
 }
 
+/* ============================ account UI ================================ */
+function renderAccount() {
+  const el = $("#account");
+  const me = state.me || { signed_in: false };
+  if (!me.signed_in) {
+    el.innerHTML = `<button class="pill" style="border-color:var(--border2);color:var(--text);">Sign in</button>`;
+    el.querySelector("button").onclick = () => location.href = "/auth/login";
+    return;
+  }
+  const av = me.picture
+    ? `<img src="${esc(me.picture)}" alt="" referrerpolicy="no-referrer">`
+    : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:linear-gradient(135deg,var(--accent),#7C3AED);color:#fff;">${esc((me.name || "?").charAt(0).toUpperCase())}</div>`;
+  el.innerHTML = `<button class="lx-avatar-btn" id="avbtn">${av}</button>
+    <div class="lx-menu" id="avmenu">
+      <div class="lx-menu-head">
+        <div style="font-size:13px;font-weight:650;">${esc(me.name)}</div>
+        <div style="font-size:11.5px;color:var(--text3);">${esc(me.email)}</div>
+        <div style="margin-top:7px;">${me.sub_active
+          ? `<span class="lx-chip pos">Pro · until ${esc(String(me.sub_until || "").slice(0, 10))}</span>
+             <span style="font-size:11px;color:var(--text3);margin-left:6px;">${me.used}/${me.cap} used</span>`
+          : `<span class="lx-chip muted">Free</span>`}</div>
+      </div>
+      <button class="lx-menu-item" data-go="Library">My Research</button>
+      ${me.sub_active ? "" : `<button class="lx-menu-item" data-go="Upgrade">Upgrade to Pro</button>`}
+      <a class="lx-menu-item" href="/auth/logout">Sign out</a>
+    </div>`;
+  const menu = $("#avmenu");
+  $("#avbtn").onclick = (e) => { e.stopPropagation(); menu.classList.toggle("open"); };
+  document.onclick = () => menu.classList.remove("open");
+  el.querySelectorAll("[data-go]").forEach((b) =>
+    b.onclick = () => { menu.classList.remove("open"); route(b.dataset.go); });
+}
+
+function renderUpgrade(v) {
+  const me = state.me || { signed_in: false };
+  const status = !me.signed_in
+    ? `<button class="lx-btn primary" onclick="location.href='/auth/login'">Sign in to get started →</button>`
+    : me.sub_active
+      ? `<span class="lx-chip pos">Pro active · until ${esc(String(me.sub_until || "").slice(0, 10))}</span>`
+      : `<span class="lx-chip warn">awaiting activation after payment</span>`;
+  v.innerHTML = `<div class="lx-hero lx-fade" style="padding-bottom:4px;">
+    <div class="lx-hero-month">ForexAnalyst Pro</div>
+    <div class="lx-hero-title" style="font-size:34px;">Fresh research, on demand</div>
+    <div class="lx-hero-sub">Free readers get every published monthly edition. Pro members generate the
+    latest research whenever they want — powered by Claude Fable, Anthropic's most capable model.</div></div>
+    <div class="lx-grid c2" style="align-items:start;">
+      <div class="lx-outlook">
+        <div class="lx-mini-label">Pro membership</div>
+        <div class="lx-price" style="margin-top:8px;">Rp 200.000<span style="font-size:15px;color:var(--text2);font-weight:500;"> / month</span></div>
+        <div style="margin:16px 0 4px;">
+          <div class="lx-body" style="padding:4px 0;"><span style="color:var(--accent2);">●</span>&nbsp; On-demand research updates written by <b>Claude Fable</b> with web-verified events</div>
+          <div class="lx-body" style="padding:4px 0;"><span style="color:var(--accent2);">●</span>&nbsp; Current-month editions — before free publication</div>
+          <div class="lx-body" style="padding:4px 0;"><span style="color:var(--accent2);">●</span>&nbsp; 30 generations per month, across all six pairs</div>
+          <div class="lx-body" style="padding:4px 0;"><span style="color:var(--accent2);">●</span>&nbsp; Personal research library saved to your account</div>
+        </div>
+        <div style="margin-top:16px;">${status}</div>
+      </div>
+      <div class="lx-card flat">
+        <div class="lx-kpi-label" style="color:var(--accent2);">How to subscribe</div>
+        <div class="lx-body" style="margin-top:10px;line-height:1.8;">
+          1. Sign in with Google (top right).<br>
+          2. Transfer <b>Rp 200.000</b> — payment details will be announced here shortly.<br>
+          3. Send your payment proof and account email to the contact on the
+          <a class="lx-src" href="https://jeffersonem.com" target="_blank" rel="noopener">author page</a>.<br>
+          4. Your account is activated within 24 hours.</div>
+        <div class="lx-body" style="margin-top:12px;color:var(--text3);font-size:12px;">
+          Subscriptions are activated manually while automated payments are being set up.</div>
+      </div>
+    </div>`;
+}
+
+async function renderLibrary(v) {
+  const me = state.me || { signed_in: false };
+  v.innerHTML = `<div class="lx-hero lx-fade" style="padding-bottom:4px;">
+    <div class="lx-hero-month">My Research</div>
+    <div class="lx-hero-title" style="font-size:34px;">Your generated editions</div>
+    <div class="lx-hero-sub">Every report you generate with Fable is saved here, tied to your account.</div></div>`;
+  if (!me.signed_in) {
+    v.insertAdjacentHTML("beforeend", `<div class="lx-card flat"><div class="lx-body">
+      Sign in to see your research library.</div>
+      <div style="margin-top:12px;"><button class="lx-btn primary" onclick="location.href='/auth/login'">Sign in →</button></div></div>`);
+    return;
+  }
+  const holder = document.createElement("div");
+  holder.innerHTML = loading("Loading your library…");
+  v.appendChild(holder);
+  let j;
+  try { j = await (await fetch("/api/myreports")).json(); } catch (e) { j = { keys: [] }; }
+  if (state.view !== "Library") return;
+  const keys = (j.keys || []).sort().reverse();
+  if (!keys.length) {
+    holder.innerHTML = `<div class="lx-card flat"><div class="lx-body">Nothing here yet — open any report
+      and hit <b>Update with Fable</b> to generate your first edition.</div></div>`;
+    return;
+  }
+  holder.innerHTML = `<div class="lx-grid c3">` + keys.map((k) => {
+    const i = k.indexOf("|");
+    const pair = k.slice(0, i), ym = k.slice(i + 1);
+    return `<div class="lx-card">
+      <div style="font-size:14.5px;font-weight:650;">${PAIRS[pair] ? PAIRS[pair].flag : ""}&nbsp; ${esc(pair)}</div>
+      <div class="lx-body" style="margin-top:4px;">${esc(monthLabel(ym))}</div>
+      <div style="margin-top:8px;"><span class="lx-chip info">Fable edition</span></div>
+      <div style="margin-top:12px;"><button class="lx-btn block" data-k="${esc(k)}">Open →</button></div>
+    </div>`;
+  }).join("") + `</div>`;
+  holder.querySelectorAll("[data-k]").forEach((b) => b.onclick = () => {
+    const i = b.dataset.k.indexOf("|");
+    state.pair = b.dataset.k.slice(0, i);
+    state.monthByPair[state.pair] = b.dataset.k.slice(i + 1);
+    route("Reports");
+  });
+}
+
+async function renderAdmin(v) {
+  v.innerHTML = `<div class="lx-hero lx-fade" style="padding-bottom:4px;">
+    <div class="lx-hero-month">Admin</div>
+    <div class="lx-hero-title" style="font-size:34px;">Subscriptions</div></div>
+    <div class="lx-card flat">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <input id="adtok" type="password" placeholder="Admin token" class="lx-select" style="flex:1;min-width:180px;">
+        <button class="lx-btn" id="adload">Load users</button>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px;">
+        <input id="ademail" type="email" placeholder="user email" class="lx-select" style="flex:1;min-width:180px;">
+        <input id="admonths" type="number" value="1" min="0" max="24" class="lx-select" style="width:80px;">
+        <button class="lx-btn primary" id="adact">Activate months</button>
+      </div>
+      <div id="adout" class="lx-body" style="margin-top:14px;"></div>
+    </div>`;
+  const tok = () => $("#adtok").value.trim();
+  $("#adtok").value = sessionStorage.getItem("fxadmin") || "";
+  $("#adload").onclick = async () => {
+    sessionStorage.setItem("fxadmin", tok());
+    const j = await (await fetch("/api/admin/users?admin=" + encodeURIComponent(tok()))).json();
+    $("#adout").innerHTML = j.users
+      ? `<table class="lx-table"><thead><tr><th>Email</th><th>Name</th><th>Status</th><th>Until</th></tr></thead><tbody>`
+        + j.users.map((u) => `<tr><td>${esc(u.email)}</td><td>${esc(u.name)}</td>
+          <td>${u.active ? '<span class="lx-chip pos">Pro</span>' : '<span class="lx-chip muted">Free</span>'}</td>
+          <td>${esc(String(u.sub_until || "—").slice(0, 10))}</td></tr>`).join("") + `</tbody></table>`
+      : esc(JSON.stringify(j));
+  };
+  $("#adact").onclick = async () => {
+    sessionStorage.setItem("fxadmin", tok());
+    const j = await (await fetch("/api/admin/activate?admin=" + encodeURIComponent(tok()), {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: $("#ademail").value.trim(), months: parseInt($("#admonths").value, 10) }),
+    })).json();
+    $("#adout").textContent = JSON.stringify(j);
+  };
+}
+
 /* ============================ boot ====================================== */
-(function boot() {
+(async function boot() {
   // intro animation: play once per browser session
   const intro = document.getElementById("intro");
   if (sessionStorage.getItem("fx-intro") === "1") {
@@ -922,6 +1153,9 @@ function renderAuthor(v) {
     setTimeout(() => intro.remove(), 2300);
   }
   if (localStorage.getItem("fx-light") === "1") document.documentElement.classList.add("light");
+  try { state.me = await (await fetch("/api/me")).json(); }
+  catch (e) { state.me = { signed_in: false }; }
+  renderAccount();
   $("#lighttoggle").onclick = () => {
     const on = document.documentElement.classList.toggle("light");
     localStorage.setItem("fx-light", on ? "1" : "0");
@@ -936,7 +1170,7 @@ function renderAuthor(v) {
     b.onclick = () => route(vn);
     np.appendChild(b);
   });
-  route("Reports");
+  route(location.hash === "#admin" ? "Admin" : "Reports");
 })();
 </script>
 </body>

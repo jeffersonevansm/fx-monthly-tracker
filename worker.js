@@ -436,7 +436,7 @@ async function routeGetResearch(url, env) {
 async function routePublished(env) {
   if (!env.REPORTS) return json({ keys: [] });
   const list = await env.REPORTS.list({ limit: 1000 });
-  return json({ keys: list.keys.map((k) => k.name) }, 200, 600);
+  return json({ keys: list.keys.map((k) => k.name).filter((n) => !n.startsWith("u:")) }, 200, 600);
 }
 
 /** One-time migration: copy the 36 generated reports from the edge cache
@@ -463,28 +463,13 @@ async function routePublishFromCache(env) {
   return json({ stored: stored.length, missing: missing });
 }
 
-async function routeResearch(request, env, ctx, url) {
-  // Generation is admin-only now: visitors read pre-published notes for free.
-  if (!env.ADMIN_TOKEN || url.searchParams.get("admin") !== env.ADMIN_TOKEN) {
-    return json({ error: "generation_disabled" }, 403);
-  }
-  if (!env.ANTHROPIC_API_KEY) return json({ error: "no_key" });
-  let body;
-  try { body = await request.json(); } catch (e) { return json({ error: "bad_request" }, 400); }
-  const pair = body.pair, ym = body.month;
-  const useSearch = body.search === true;
-  if (!PAIRS[pair] || !/^\d{4}-(0[1-9]|1[0-2])$/.test(ym || "")) return json({ error: "bad_request" }, 400);
-
-  const cacheKey = "/research/" + encodeURIComponent(pair) + "/" + ym + "/" + (useSearch ? "s1" : "s0");
-  const cache = caches.default;
-  const hit = await cache.match(new Request(CACHE_BASE + cacheKey));
-  if (hit) return hit;
-
-  // build contexts server-side
+/** Shared research generation core. Returns {report, raw, sources} or {error}. */
+async function produceReport(env, ctx, pair, ym, useSearch, model) {
+  if (!env.ANTHROPIC_API_KEY) return { error: "no_key" };
   const payload = await pairPayload(pair);
-  if (!payload) return json({ error: "prices_unavailable" }, 502);
+  if (!payload) return { error: "prices_unavailable" };
   const idx = payload.months.findIndex((m) => m.ym === ym);
-  if (idx === -1) return json({ error: "month_out_of_range" }, 400);
+  if (idx === -1) return { error: "month_out_of_range" };
   const dp = pair === "USD/IDR" ? 0 : pair === "DXY" ? 2 : 4;
   const rows = payload.months.slice(Math.max(0, idx - 1), idx + 5);
   const priceCtx = rows.map((r) =>
@@ -528,7 +513,7 @@ async function routeResearch(request, env, ctx, url) {
     "RECENT MARKET HEADLINES (sentiment context):\n" + (newsCtx || "(none provided)");
 
   const apiBody = {
-    model: "claude-haiku-4-5-20251001",
+    model: model || "claude-haiku-4-5-20251001",
     max_tokens: 8000,
     messages: [{ role: "user", content: prompt }],
   };
@@ -546,7 +531,7 @@ async function routeResearch(request, env, ctx, url) {
   if (!r.ok) {
     let detail = "";
     try { detail = (await r.json()).error.message; } catch (e) { /* opaque */ }
-    return json({ error: "ai_error (" + r.status + ") " + detail });
+    return { error: "ai_error (" + r.status + ") " + detail };
   }
   const msg = await r.json();
   let raw = "";
@@ -560,16 +545,217 @@ async function routeResearch(request, env, ctx, url) {
       }
     }
   }
-  const report = extractJson(raw);
-  const resp = json({ report: report, raw: raw.slice(0, 20000), sources: sources }, 200,
-    report ? 86400 : undefined);
-  if (report) {
+  return { report: extractJson(raw), raw: raw.slice(0, 20000), sources: sources };
+}
+
+/** Admin publishing endpoint (Haiku) -- writes permanent editions to KV. */
+async function routeResearch(request, env, ctx, url) {
+  if (!env.ADMIN_TOKEN || url.searchParams.get("admin") !== env.ADMIN_TOKEN) {
+    return json({ error: "generation_disabled" }, 403);
+  }
+  let body;
+  try { body = await request.json(); } catch (e) { return json({ error: "bad_request" }, 400); }
+  const pair = body.pair, ym = body.month;
+  const useSearch = body.search === true;
+  if (!PAIRS[pair] || !/^\d{4}-(0[1-9]|1[0-2])$/.test(ym || "")) return json({ error: "bad_request" }, 400);
+
+  const cacheKey = "/research/" + encodeURIComponent(pair) + "/" + ym + "/" + (useSearch ? "s1" : "s0");
+  const cache = caches.default;
+  const hit = await cache.match(new Request(CACHE_BASE + cacheKey));
+  if (hit) return hit;
+
+  const out = await produceReport(env, ctx, pair, ym, useSearch, "claude-haiku-4-5-20251001");
+  if (out.error) return json(out);
+  const resp = json(out, 200, out.report ? 86400 : undefined);
+  if (out.report) {
     ctx.waitUntil(cache.put(new Request(CACHE_BASE + cacheKey), resp.clone()));
-    // successful admin generations are published permanently
     if (env.REPORTS) ctx.waitUntil(env.REPORTS.put(pair + "|" + ym,
-      JSON.stringify({ report: report, sources: sources })));
+      JSON.stringify({ report: out.report, sources: out.sources })));
   }
   return resp;
+}
+
+/* ============================ accounts / subscriptions =================== */
+
+const SUB_CAP = 30;                       // Fable generations per month
+const FABLE_MODEL = "claude-fable-5";
+
+function b64urlDecode(s) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  return atob(s);
+}
+
+function parseCookies(request) {
+  const out = {};
+  (request.headers.get("Cookie") || "").split(";").forEach((p) => {
+    const i = p.indexOf("=");
+    if (i > 0) out[p.slice(0, i).trim()] = p.slice(i + 1).trim();
+  });
+  return out;
+}
+
+function randToken() {
+  const a = new Uint8Array(24);
+  crypto.getRandomValues(a);
+  return [...a].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function getUser(request, env) {
+  if (!env.REPORTS) return null;
+  const t = parseCookies(request)["fxsess"];
+  if (!t) return null;
+  const uid = await env.REPORTS.get("u:sess:" + t);
+  if (!uid) return null;
+  const u = await env.REPORTS.get("u:user:" + uid);
+  return u ? Object.assign({ uid: uid }, JSON.parse(u)) : null;
+}
+
+const subActive = (u) => !!(u && u.sub_until && u.sub_until > new Date().toISOString());
+
+function routeLogin(url, env) {
+  if (!env.GOOGLE_CLIENT_ID) {
+    return new Response("Sign-in is not configured yet (missing GOOGLE_CLIENT_ID).", { status: 500 });
+  }
+  const state = randToken();
+  const auth = "https://accounts.google.com/o/oauth2/v2/auth?" + new URLSearchParams({
+    client_id: env.GOOGLE_CLIENT_ID,
+    redirect_uri: "https://" + url.hostname + "/auth/callback",
+    response_type: "code", scope: "openid email profile",
+    state: state, prompt: "select_account",
+  });
+  const h = new Headers({ Location: auth });
+  h.append("Set-Cookie", "fxstate=" + state + "; Path=/; Max-Age=600; Secure; HttpOnly; SameSite=Lax");
+  return new Response(null, { status: 302, headers: h });
+}
+
+async function routeCallback(url, request, env) {
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  if (!code || !state || parseCookies(request)["fxstate"] !== state) {
+    return new Response("Sign-in failed (state mismatch). Please try again from the homepage.", { status: 400 });
+  }
+  const tr = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code: code, client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: "https://" + url.hostname + "/auth/callback", grant_type: "authorization_code",
+    }),
+  });
+  if (!tr.ok) return new Response("Sign-in failed (token exchange). Please try again.", { status: 502 });
+  const tok = await tr.json();
+  let payload;
+  try { payload = JSON.parse(b64urlDecode(tok.id_token.split(".")[1])); }
+  catch (e) { return new Response("Sign-in failed (bad token).", { status: 502 }); }
+  const uid = payload.sub;
+  const existing = await env.REPORTS.get("u:user:" + uid);
+  const user = existing ? JSON.parse(existing) : { created: new Date().toISOString(), sub_until: null };
+  user.email = payload.email || user.email || "";
+  user.name = payload.name || user.email;
+  user.picture = payload.picture || "";
+  await env.REPORTS.put("u:user:" + uid, JSON.stringify(user));
+  if (user.email) await env.REPORTS.put("u:email:" + user.email.toLowerCase(), uid);
+  const sess = randToken();
+  await env.REPORTS.put("u:sess:" + sess, uid, { expirationTtl: 60 * 60 * 24 * 30 });
+  const h = new Headers({ Location: "/" });
+  h.append("Set-Cookie", "fxsess=" + sess + "; Path=/; Max-Age=" + 60 * 60 * 24 * 30 + "; Secure; HttpOnly; SameSite=Lax");
+  h.append("Set-Cookie", "fxstate=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax");
+  return new Response(null, { status: 302, headers: h });
+}
+
+async function routeLogout(request, env) {
+  const t = parseCookies(request)["fxsess"];
+  if (t && env.REPORTS) await env.REPORTS.delete("u:sess:" + t);
+  const h = new Headers({ Location: "/" });
+  h.append("Set-Cookie", "fxsess=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax");
+  return new Response(null, { status: 302, headers: h });
+}
+
+async function routeMe(request, env) {
+  const u = await getUser(request, env);
+  if (!u) return json({ signed_in: false });
+  const ym = new Date().toISOString().slice(0, 7);
+  const used = parseInt(await env.REPORTS.get("u:usage:" + u.uid + ":" + ym) || "0", 10);
+  return json({ signed_in: true, name: u.name, email: u.email, picture: u.picture,
+    sub_active: subActive(u), sub_until: u.sub_until, used: used, cap: SUB_CAP });
+}
+
+/** Subscriber-only: generate a fresh report with Fable, saved to the account. */
+async function routeGenerate(request, env, ctx) {
+  const u = await getUser(request, env);
+  if (!u) return json({ error: "signed_out" }, 401);
+  if (!subActive(u)) return json({ error: "subscription_required" }, 402);
+  let body;
+  try { body = await request.json(); } catch (e) { return json({ error: "bad_request" }, 400); }
+  const pair = body.pair, ym = body.month;
+  if (!PAIRS[pair] || !/^\d{4}-(0[1-9]|1[0-2])$/.test(ym || "")) return json({ error: "bad_request" }, 400);
+  const nowYm = new Date().toISOString().slice(0, 7);
+  if (ym > nowYm || ym < "2024-07") return json({ error: "month_out_of_range" }, 400);
+
+  const usageKey = "u:usage:" + u.uid + ":" + nowYm;
+  const used = parseInt(await env.REPORTS.get(usageKey) || "0", 10);
+  if (used >= SUB_CAP) return json({ error: "cap_reached", used: used, cap: SUB_CAP }, 429);
+
+  const out = await produceReport(env, ctx, pair, ym, true, FABLE_MODEL);
+  if (out.error) return json(out);
+  if (out.report) {
+    await env.REPORTS.put(usageKey, String(used + 1), { expirationTtl: 60 * 60 * 24 * 45 });
+    await env.REPORTS.put("u:rep:" + u.uid + ":" + pair + "|" + ym, JSON.stringify({
+      report: out.report, sources: out.sources, model: "fable",
+      generated: new Date().toISOString() }));
+  }
+  return json({ report: out.report, raw: out.raw, sources: out.sources,
+    used: out.report ? used + 1 : used, cap: SUB_CAP });
+}
+
+async function routeMyReports(request, env) {
+  const u = await getUser(request, env);
+  if (!u) return json({ error: "signed_out" }, 401);
+  const list = await env.REPORTS.list({ prefix: "u:rep:" + u.uid + ":", limit: 1000 });
+  return json({ keys: list.keys.map((k) => k.name.slice(("u:rep:" + u.uid + ":").length)) });
+}
+
+async function routeMyReport(request, env, url) {
+  const u = await getUser(request, env);
+  if (!u) return json({ error: "signed_out" }, 401);
+  const pair = url.searchParams.get("pair"), ym = url.searchParams.get("month");
+  if (!PAIRS[pair] || !/^\d{4}-\d{2}$/.test(ym || "")) return json({ error: "bad_request" }, 400);
+  const v = await env.REPORTS.get("u:rep:" + u.uid + ":" + pair + "|" + ym);
+  if (!v) return json({ error: "not_found" }, 404);
+  return new Response(v, { headers: { "content-type": "application/json; charset=utf-8" } });
+}
+
+/* ---- admin: list users, activate subscriptions (manual payments) ---- */
+
+async function routeAdminUsers(env, url) {
+  if (!env.ADMIN_TOKEN || url.searchParams.get("admin") !== env.ADMIN_TOKEN) return json({ error: "forbidden" }, 403);
+  const list = await env.REPORTS.list({ prefix: "u:user:", limit: 1000 });
+  const users = [];
+  for (const k of list.keys) {
+    const v = await env.REPORTS.get(k.name);
+    if (v) {
+      const u = JSON.parse(v);
+      users.push({ email: u.email, name: u.name, sub_until: u.sub_until, active: subActive(u), created: u.created });
+    }
+  }
+  return json({ users: users });
+}
+
+async function routeAdminActivate(request, env, url) {
+  if (!env.ADMIN_TOKEN || url.searchParams.get("admin") !== env.ADMIN_TOKEN) return json({ error: "forbidden" }, 403);
+  let body;
+  try { body = await request.json(); } catch (e) { return json({ error: "bad_request" }, 400); }
+  const email = String(body.email || "").toLowerCase();
+  const months = Math.max(0, Math.min(24, parseInt(body.months, 10) || 0));
+  const uid = await env.REPORTS.get("u:email:" + email);
+  if (!uid) return json({ error: "user_not_found" }, 404);
+  const u = JSON.parse(await env.REPORTS.get("u:user:" + uid));
+  const base = (u.sub_until && u.sub_until > new Date().toISOString()) ? new Date(u.sub_until) : new Date();
+  base.setMonth(base.getMonth() + months);
+  u.sub_until = months === 0 ? null : base.toISOString();
+  await env.REPORTS.put("u:user:" + uid, JSON.stringify(u));
+  return json({ ok: true, email: email, sub_until: u.sub_until });
 }
 
 // ============================ entry ======================================
@@ -586,6 +772,15 @@ export default {
       if (p === "/api/research" && request.method === "POST") return await routeResearch(request, env, ctx, url);
       if (p === "/api/published") return await routePublished(env);
       if (p === "/api/publish-from-cache") return await routePublishFromCache(env);
+      if (p === "/auth/login") return routeLogin(url, env);
+      if (p === "/auth/callback") return await routeCallback(url, request, env);
+      if (p === "/auth/logout") return await routeLogout(request, env);
+      if (p === "/api/me") return await routeMe(request, env);
+      if (p === "/api/generate" && request.method === "POST") return await routeGenerate(request, env, ctx);
+      if (p === "/api/myreports") return await routeMyReports(request, env);
+      if (p === "/api/myreport") return await routeMyReport(request, env, url);
+      if (p === "/api/admin/users") return await routeAdminUsers(env, url);
+      if (p === "/api/admin/activate" && request.method === "POST") return await routeAdminActivate(request, env, url);
       if (p === "/api/status") {
         return json({
           prices: true,
