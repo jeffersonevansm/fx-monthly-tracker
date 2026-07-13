@@ -678,19 +678,19 @@ async function renderReports(v) {
   const me = state.me || { signed_in: false };
   if (!me.signed_in) {
     fb.innerHTML = `<div class="lx-aipanel"><div class="lx-body">Pro members can generate the latest
-      ${esc(pair)} research on demand with <b>Claude Fable</b> — including the current month, before publication.</div>
+      ${esc(pair)} research on demand — AI-written with web-verified events, including the current month.</div>
       <button class="lx-btn" id="fbtn">Sign in →</button></div>`;
     $("#fbtn").onclick = () => location.href = "/auth/login";
   } else if (!me.sub_active) {
     fb.innerHTML = `<div class="lx-aipanel"><div class="lx-body">Upgrade to Pro to generate fresh research
-      updates with <b>Claude Fable</b> — including the current month, before publication.</div>
+      updates on demand — including the current month, before publication.</div>
       <button class="lx-btn primary" id="fbtn">Upgrade · Rp 200k/mo →</button></div>`;
     $("#fbtn").onclick = () => route("Upgrade");
   } else {
     fb.innerHTML = `<div class="lx-aipanel"><div class="lx-body">Generate the latest ${esc(pair)} ·
-      ${esc(monthLabel(ym))} edition with <b>Claude Fable</b>.
+      ${esc(monthLabel(ym))} edition.
       <span style="color:var(--text3);">&nbsp;${me.used}/${me.cap} used this month</span></div>
-      <button class="lx-btn primary" id="fbtn">Update with Fable →</button><div id="fberr" class="lx-err" style="width:100%;display:none;"></div></div>`;
+      <button class="lx-btn primary" id="fbtn">Generate update →</button><div id="fberr" class="lx-err" style="width:100%;display:none;"></div></div>`;
     $("#fbtn").onclick = async () => {
       const b = $("#fbtn");
       b.disabled = true;
@@ -703,14 +703,14 @@ async function renderReports(v) {
         j = await r.json();
       } catch (e) { j = { error: String(e) }; }
       if (j.report) {
-        state.myreps[rk] = { report: j.report, sources: j.sources, model: "fable",
+        state.myreps[rk] = { report: j.report, sources: j.sources, model: "pro",
           generated: new Date().toISOString() };
         if (typeof j.used === "number") state.me.used = j.used;
         if (state.view === "Reports") route("Reports");
         return;
       }
       b.disabled = false;
-      b.textContent = "Update with Fable →";
+      b.textContent = "Generate update →";
       const errEl = $("#fberr");
       errEl.style.display = "block";
       errEl.textContent = j.error === "cap_reached"
@@ -873,11 +873,11 @@ function renderResearch(out, res, pair, ym) {
     return;
   }
   let n = 6;
-  const mineTag = res.model === "fable"
-    ? ` &nbsp;·&nbsp; <span class="lx-chip info">Your edition · Fable · ${esc(String(res.generated || "").slice(0, 10))}</span>`
+  const mineTag = res.model
+    ? ` &nbsp;·&nbsp; <span class="lx-chip info">Your edition · ${esc(String(res.generated || "").slice(0, 10))}</span>`
     : "";
   let html = `<div class="lx-meta" style="margin-top:2px;">FX Research Desk &nbsp;·&nbsp;
-    ${res.model === "fable" ? "On-demand research update" : "Published monthly review"}
+    ${res.model ? "On-demand research update" : "Published monthly review"}
     &nbsp;·&nbsp; ${esc(monthLabel(ym))} &nbsp;·&nbsp; ${esc(pair)}${mineTag}</div>`;
   const drivers = rep.macro_drivers || [];
   if (drivers.length) {
@@ -1034,13 +1034,13 @@ function renderUpgrade(v) {
     <div class="lx-hero-month">ForexAnalyst Pro</div>
     <div class="lx-hero-title" style="font-size:34px;">Fresh research, on demand</div>
     <div class="lx-hero-sub">Free readers get every published monthly edition. Pro members generate the
-    latest research whenever they want — powered by Claude Fable, Anthropic's most capable model.</div></div>
+    latest research whenever they want — AI-written with web-verified event data.</div></div>
     <div class="lx-grid c2" style="align-items:start;">
       <div class="lx-outlook">
         <div class="lx-mini-label">Pro membership</div>
         <div class="lx-price" style="margin-top:8px;">Rp 200.000<span style="font-size:15px;color:var(--text2);font-weight:500;"> / month</span></div>
         <div style="margin:16px 0 4px;">
-          <div class="lx-body" style="padding:4px 0;"><span style="color:var(--accent2);">●</span>&nbsp; On-demand research updates written by <b>Claude Fable</b> with web-verified events</div>
+          <div class="lx-body" style="padding:4px 0;"><span style="color:var(--accent2);">●</span>&nbsp; On-demand research updates with web-verified event data</div>
           <div class="lx-body" style="padding:4px 0;"><span style="color:var(--accent2);">●</span>&nbsp; Current-month editions — before free publication</div>
           <div class="lx-body" style="padding:4px 0;"><span style="color:var(--accent2);">●</span>&nbsp; 30 generations per month, across all six pairs</div>
           <div class="lx-body" style="padding:4px 0;"><span style="color:var(--accent2);">●</span>&nbsp; Personal research library saved to your account</div>
@@ -1066,7 +1066,7 @@ async function renderLibrary(v) {
   v.innerHTML = `<div class="lx-hero lx-fade" style="padding-bottom:4px;">
     <div class="lx-hero-month">My Research</div>
     <div class="lx-hero-title" style="font-size:34px;">Your generated editions</div>
-    <div class="lx-hero-sub">Every report you generate with Fable is saved here, tied to your account.</div></div>`;
+    <div class="lx-hero-sub">Every report you generate is saved here, tied to your account.</div></div>`;
   if (!me.signed_in) {
     v.insertAdjacentHTML("beforeend", `<div class="lx-card flat"><div class="lx-body">
       Sign in to see your research library.</div>
@@ -1082,7 +1082,7 @@ async function renderLibrary(v) {
   const keys = (j.keys || []).sort().reverse();
   if (!keys.length) {
     holder.innerHTML = `<div class="lx-card flat"><div class="lx-body">Nothing here yet — open any report
-      and hit <b>Update with Fable</b> to generate your first edition.</div></div>`;
+      and hit <b>Generate update</b> to create your first edition.</div></div>`;
     return;
   }
   holder.innerHTML = `<div class="lx-grid c3">` + keys.map((k) => {
@@ -1091,7 +1091,7 @@ async function renderLibrary(v) {
     return `<div class="lx-card">
       <div style="font-size:14.5px;font-weight:650;">${PAIRS[pair] ? PAIRS[pair].flag : ""}&nbsp; ${esc(pair)}</div>
       <div class="lx-body" style="margin-top:4px;">${esc(monthLabel(ym))}</div>
-      <div style="margin-top:8px;"><span class="lx-chip info">Fable edition</span></div>
+      <div style="margin-top:8px;"><span class="lx-chip info">Pro edition</span></div>
       <div style="margin-top:12px;"><button class="lx-btn block" data-k="${esc(k)}">Open →</button></div>
     </div>`;
   }).join("") + `</div>`;

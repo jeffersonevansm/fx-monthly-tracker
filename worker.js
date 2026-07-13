@@ -577,8 +577,8 @@ async function routeResearch(request, env, ctx, url) {
 
 /* ============================ accounts / subscriptions =================== */
 
-const SUB_CAP = 30;                       // Fable generations per month
-const FABLE_MODEL = "claude-fable-5";
+const SUB_CAP = 30;                       // Pro generations per month
+const PRO_MODEL = "claude-haiku-4-5-20251001";
 
 function b64urlDecode(s) {
   s = s.replace(/-/g, "+").replace(/_/g, "/");
@@ -681,7 +681,7 @@ async function routeMe(request, env) {
     sub_active: subActive(u), sub_until: u.sub_until, used: used, cap: SUB_CAP });
 }
 
-/** Subscriber-only: generate a fresh report with Fable, saved to the account. */
+/** Subscriber-only: generate a fresh report, saved to the account. */
 async function routeGenerate(request, env, ctx) {
   const u = await getUser(request, env);
   if (!u) return json({ error: "signed_out" }, 401);
@@ -697,12 +697,12 @@ async function routeGenerate(request, env, ctx) {
   const used = parseInt(await env.REPORTS.get(usageKey) || "0", 10);
   if (used >= SUB_CAP) return json({ error: "cap_reached", used: used, cap: SUB_CAP }, 429);
 
-  const out = await produceReport(env, ctx, pair, ym, true, FABLE_MODEL);
+  const out = await produceReport(env, ctx, pair, ym, true, PRO_MODEL);
   if (out.error) return json(out);
   if (out.report) {
     await env.REPORTS.put(usageKey, String(used + 1), { expirationTtl: 60 * 60 * 24 * 45 });
     await env.REPORTS.put("u:rep:" + u.uid + ":" + pair + "|" + ym, JSON.stringify({
-      report: out.report, sources: out.sources, model: "fable",
+      report: out.report, sources: out.sources, model: "pro",
       generated: new Date().toISOString() }));
   }
   return json({ report: out.report, raw: out.raw, sources: out.sources,
